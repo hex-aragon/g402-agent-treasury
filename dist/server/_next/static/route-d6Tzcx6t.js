@@ -1,0 +1,1 @@
+import{n as e}from"./server-BMMMjyxk.js";import{n as t}from"./routing-BsBaoB1L.js";async function n(){let n=[...new Set(t().flatMap(e=>e.models))];return e.json({object:`list`,data:n.map(e=>({id:e,object:`model`,owned_by:`akash`}))},{headers:{"cache-control":`public, max-age=60`}})}export{n as GET};

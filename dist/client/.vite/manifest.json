@@ -1,93 +1,101 @@
 {
-  "_framework-BpSqSxVs.js": {
-    "file": "assets/framework-BpSqSxVs.js",
+  "_framework-BpFhWT3Y.js": {
+    "file": "_next/static/chunks/framework-BpFhWT3Y.js",
     "name": "framework",
     "imports": [
-      "_rolldown-runtime-BYbx6iT9.js"
+      "_rolldown-runtime-B0Z9INg1.js"
     ]
   },
-  "_query-DZOG5WwV.js": {
-    "file": "assets/query-DZOG5WwV.js",
+  "_query-DugiHe4Q.js": {
+    "file": "_next/static/chunks/query-DugiHe4Q.js",
     "name": "query"
   },
-  "_rolldown-runtime-BYbx6iT9.js": {
-    "file": "assets/rolldown-runtime-BYbx6iT9.js",
+  "_rolldown-runtime-B0Z9INg1.js": {
+    "file": "_next/static/chunks/rolldown-runtime-B0Z9INg1.js",
     "name": "rolldown-runtime"
   },
+  "_vinext-MWVgPdZs.js": {
+    "file": "_next/static/chunks/vinext-MWVgPdZs.js",
+    "name": "vinext",
+    "imports": [
+      "_rolldown-runtime-B0Z9INg1.js",
+      "_framework-BpFhWT3Y.js"
+    ],
+    "dynamicImports": [
+      "node_modules/vinext/dist/shims/internal/hybrid-client-route-owner.js",
+      "_vinext-MWVgPdZs.js"
+    ]
+  },
   "app/cosmos/CosmosWallet.tsx": {
-    "file": "assets/CosmosWallet-D2cndKyr.js",
+    "file": "_next/static/chunks/CosmosWallet-B4H5h7Ko.js",
     "name": "CosmosWallet",
     "src": "app/cosmos/CosmosWallet.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_rolldown-runtime-BYbx6iT9.js",
-      "_framework-BpSqSxVs.js"
+      "_rolldown-runtime-B0Z9INg1.js",
+      "_framework-BpFhWT3Y.js"
     ]
   },
   "app/wallet/WalletClient.tsx": {
-    "file": "assets/WalletClient-CP-XY5lq.js",
+    "file": "_next/static/chunks/WalletClient-Cx5VM6jg.js",
     "name": "WalletClient",
     "src": "app/wallet/WalletClient.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_rolldown-runtime-BYbx6iT9.js",
-      "_framework-BpSqSxVs.js"
+      "_rolldown-runtime-B0Z9INg1.js",
+      "_framework-BpFhWT3Y.js"
+    ]
+  },
+  "node_modules/vinext/dist/shims/internal/hybrid-client-route-owner.js": {
+    "file": "_next/static/chunks/hybrid-client-route-owner-Dy5Zsv3e.js",
+    "name": "hybrid-client-route-owner",
+    "src": "node_modules/vinext/dist/shims/internal/hybrid-client-route-owner.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_vinext-MWVgPdZs.js",
+      "_query-DugiHe4Q.js"
     ]
   },
   "node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-DMX4N2bB.js",
+    "file": "_next/static/chunks/layout-segment-context-Bnd2bNnl.js",
     "name": "layout-segment-context",
     "src": "node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
     "imports": [
-      "_rolldown-runtime-BYbx6iT9.js",
-      "virtual:vinext-app-browser-entry",
-      "_framework-BpSqSxVs.js"
+      "_rolldown-runtime-B0Z9INg1.js",
+      "_framework-BpFhWT3Y.js",
+      "_vinext-MWVgPdZs.js"
     ]
   },
   "node_modules/vinext/dist/shims/link.js": {
-    "file": "assets/link-DZWrgC8Z.js",
+    "file": "_next/static/chunks/link-DQh8yZAC.js",
     "name": "link",
     "src": "node_modules/vinext/dist/shims/link.js",
     "isDynamicEntry": true,
     "imports": [
-      "_rolldown-runtime-BYbx6iT9.js",
-      "virtual:vinext-app-browser-entry",
-      "_framework-BpSqSxVs.js",
-      "_query-DZOG5WwV.js"
+      "_rolldown-runtime-B0Z9INg1.js",
+      "_framework-BpFhWT3Y.js",
+      "_vinext-MWVgPdZs.js",
+      "_query-DugiHe4Q.js"
     ],
     "dynamicImports": [
-      "node_modules/vinext/dist/shims/router.js"
-    ]
-  },
-  "node_modules/vinext/dist/shims/router.js": {
-    "file": "assets/router-0xG5MQxU.js",
-    "name": "router",
-    "src": "node_modules/vinext/dist/shims/router.js",
-    "isDynamicEntry": true,
-    "imports": [
-      "_rolldown-runtime-BYbx6iT9.js",
-      "virtual:vinext-app-browser-entry",
-      "_framework-BpSqSxVs.js",
-      "_query-DZOG5WwV.js"
-    ],
-    "dynamicImports": [
-      "_framework-BpSqSxVs.js"
+      "_vinext-MWVgPdZs.js"
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-TQgjx_tS.js",
+    "file": "_next/static/chunks/index-xsX7jY-A.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
     "imports": [
-      "_rolldown-runtime-BYbx6iT9.js",
-      "_framework-BpSqSxVs.js"
+      "_rolldown-runtime-B0Z9INg1.js",
+      "_framework-BpFhWT3Y.js",
+      "_vinext-MWVgPdZs.js"
     ],
     "dynamicImports": [
+      "_vinext-MWVgPdZs.js",
       "node_modules/vinext/dist/shims/layout-segment-context.js",
       "app/wallet/WalletClient.tsx",
-      "virtual:vinext-app-browser-entry",
       "app/cosmos/CosmosWallet.tsx",
       "node_modules/vinext/dist/shims/link.js"
     ]
