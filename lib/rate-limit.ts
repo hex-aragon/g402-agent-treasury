@@ -1,0 +1,5 @@
+import { createHash } from "node:crypto";
+import { neon } from "@neondatabase/serverless";
+const memory=new Map<string,{count:number;reset:number}>();
+export type RateLimitResult={allowed:boolean;remaining:number;resetAt:number};
+export async function consumeRateLimit(key:string,limit:number,windowMs=60_000,now=Date.now()):Promise<RateLimitResult>{const hash=createHash("sha256").update(key).digest("hex"),windowStart=new Date(Math.floor(now/windowMs)*windowMs),resetAt=windowStart.getTime()+windowMs;if(!process.env.DATABASE_URL){const b=memory.get(hash);if(!b||b.reset<=now){memory.set(hash,{count:1,reset:resetAt});return {allowed:true,remaining:limit-1,resetAt}}b.count++;return {allowed:b.count<=limit,remaining:Math.max(0,limit-b.count),resetAt:b.reset}}const sql=neon(process.env.DATABASE_URL);const rows=await sql`insert into rate_limit_buckets(key_hash,window_start,count) values(${hash},${windowStart.toISOString()},1) on conflict(key_hash,window_start) do update set count=rate_limit_buckets.count+1 returning count`;const count=Number(rows[0].count);return {allowed:count<=limit,remaining:Math.max(0,limit-count),resetAt}}

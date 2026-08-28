@@ -1,0 +1,2 @@
+import WalletClient from "./WalletClient";
+export default function WalletPage(){return <><div className="pageHead"><div className="eyebrow">Agent payment control</div><h1>Agent Wallet</h1><p>Adena 서명과 agent별 지출 정책을 결합한 비수탁 결제 지갑입니다.</p></div><WalletClient/><div className="grid twoCol" style={{marginTop:14}}><div className="card feature"><h3>Policy order</h3><p>네트워크 → 자산 → 판매자 → 수취인 → 건별 한도 → 일 예산 → 월 예산 → 사람 승인 순서로 차단합니다.</p></div><div className="card feature"><h3>Replay protection</h3><p>Payment ID, payer nonce, resource hash와 만료시각이 결제에 결합됩니다.</p></div></div></>}

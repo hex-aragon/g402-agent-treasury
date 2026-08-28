@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: g402
+      POSTGRES_PASSWORD: g402-local-only
+      POSTGRES_DB: g402
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U g402"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes: ["g402-postgres:/var/lib/postgresql/data"]
+  web:
+    build: {context: ".", dockerfile: Dockerfile.web}
+    env_file: [.env.local]
+    environment:
+      DATABASE_URL: postgres://g402:g402-local-only@postgres:5432/g402
+      G402_ENABLE_SETTLEMENT: "false"
+      G402_ALLOW_MAINNET: "false"
+    depends_on:
+      postgres: {condition: service_healthy}
+    ports: ["3000:3000"]
+  indexer:
+    build: {context: ".", dockerfile: Dockerfile.worker}
+    env_file: [.env.local]
+    environment:
+      DATABASE_URL: postgres://g402:g402-local-only@postgres:5432/g402
+    depends_on:
+      postgres: {condition: service_healthy}
+    profiles: ["indexer"]
+  akash-worker:
+    build: {context: ".", dockerfile: Dockerfile.akash-worker}
+    env_file: [.env.local]
+    environment:
+      DATABASE_URL: postgres://g402:g402-local-only@postgres:5432/g402
+    depends_on:
+      postgres: {condition: service_healthy}
+    profiles: ["akash-live"]
+  filecoin-worker:
+    build: {context: ".", dockerfile: Dockerfile.filecoin-worker}
+    env_file: [.env.local]
+    environment:
+      DATABASE_URL: postgres://g402:g402-local-only@postgres:5432/g402
+    depends_on:
+      postgres: {condition: service_healthy}
+    profiles: ["filecoin-live"]
+volumes:
+  g402-postgres:

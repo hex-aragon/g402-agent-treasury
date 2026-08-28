@@ -1,0 +1,13 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {buildSDL} from "../packages/akash/src/deployment.ts";
+import {quoteDeployment,quoteInference} from "../packages/akash/src/pricing.ts";
+import {selectProvider} from "../packages/akash/src/routing.ts";
+import type {AkashProvider,ChatRequest,DeploymentRequest} from "../packages/akash/src/domain.ts";
+const request:ChatRequest={model:"llama",messages:[{role:"user",content:"hello"}],max_tokens:100};
+const providers:AkashProvider[]=[{id:"expensive",baseUrl:"x",region:"eu",models:["llama"],priority:100,inputMicrousdPerMillion:"200000",outputMicrousdPerMillion:"500000",fixedMicrousd:"0",apiKeyEnv:"X",enabled:true},{id:"local",baseUrl:"y",region:"kr",models:["llama"],priority:100,inputMicrousdPerMillion:"100000",outputMicrousdPerMillion:"400000",fixedMicrousd:"0",apiKeyEnv:"Y",enabled:true}];
+test("inference quote reserves maximum output",()=>{const quote=quoteInference(request,providers[1]);assert.ok(BigInt(quote.paymentAmount)>0n);assert.equal(quote.maxOutputTokens,100)});
+test("router honors requested region before price",()=>assert.equal(selectProvider("llama","eu",providers).id,"expensive"));
+test("router uses price when region is equal",()=>assert.equal(selectProvider("llama",undefined,providers).id,"local"));
+test("deployment pricing includes GPU hours",()=>{const base:DeploymentRequest={image:"ghcr.io/acme/model:1",command:[],env:{},cpuMillis:1000,memoryMiB:1024,storageMiB:1024,maxHours:2};assert.ok(BigInt(quoteDeployment({...base,gpu:{model:"h100",units:1}}).paymentAmount)>BigInt(quoteDeployment(base).paymentAmount))});
+test("SDL does not interpolate environment as YAML",()=>{const req:DeploymentRequest={image:"ghcr.io/acme/model:1",command:["serve"],env:{TOKEN:"value: still-data"},cpuMillis:1000,memoryMiB:1024,storageMiB:1024,maxHours:1};const sdl=buildSDL(req);assert.match(sdl,/\["TOKEN=value: still-data"\]/);assert.doesNotMatch(sdl,/TOKEN:\s+value/) });

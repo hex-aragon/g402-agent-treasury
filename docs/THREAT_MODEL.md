@@ -1,0 +1,34 @@
+# g402 threat model
+
+## Scope and trust boundaries
+
+Protected assets are buyer funds, agent budgets, merchant revenue, approval decisions, facilitator availability, canonical indexed history and operator credentials. The browser wallet, resource server, facilitator, Postgres, RPC nodes and indexer are separate trust zones. Buyer private keys never cross the Adena boundary.
+
+## Threats and implemented controls
+
+| Threat | Control | Verification |
+| --- | --- | --- |
+| Recipient, amount or asset substitution | Decode one supported Amino message and compare exact fields | Gno tests |
+| Signer substitution | Derive the g1 address from the signed secp256k1 public key | Gno tests |
+| Resource/cross-chain replay | Signed chain ID, payment ID, random nonce and SHA-256 method/URL binding in memo | domain/Gno tests |
+| Duplicate broadcast | Unique payment ID, fingerprint and network/payer/nonce constraints; claim before RPC | store tests/migrations |
+| Idempotency-key mutation | A repeated payment ID with a different fingerprint fails with 409 | store tests |
+| Concurrent human approval | Durable approval_required state and compare-and-swap transition | store tests |
+| Agent budget bypass | Network, asset, allowlists, per-call/day/month limits and expiry checked twice | policy tests |
+| Parser/resource exhaustion | Strict schemas, integer/address bounds, 500 KB envelope cap and rate limit | schemas |
+| API key timing leak | SHA-256 and constant-time comparison | domain tests |
+| Serverless rate-limit bypass | Atomic Postgres buckets; memory fallback outside production | rate-limit tests |
+| Reorg/misleading status | Canonical blocks, checkpoint, confirmations, rewind and reverted state | indexer tests |
+| RPC or settlement outage | Fail closed, timeout, alert webhook and durable reconciliation state | adapter/runbook |
+| Mainnet fund movement | Independent settlement and mainnet flags, both default false | domain tests |
+| Web injection/clickjacking | CSP, frame denial, MIME and permissions headers | Next config |
+
+## Residual risks and release restrictions
+
+- Gno has no EIP-3009 equivalent. The pinned official Gno/TM2 codec passes a signed SDK vector, but a live Adena staging transaction must still be captured and verified before non-mock facilitator broadcast is promoted.
+- A single RPC is not Byzantine-resistant. Promotion requires two independent RPC providers and block/hash quorum.
+- Bearer keys are coarse-grained. Use an identity-aware gateway for per-merchant identities and rotate keys.
+- Postgres rate buckets require retention. Per-instance metrics and structured logs need platform aggregation.
+- This staging posture is not authorization for mainnet. Mainnet remains locked even when staging is enabled.
+
+An attacker cannot obtain the sample resource using only a signature: it requires a durable settled record. Approval follows persistence of the exact fingerprint. A reorg changes settled records to reverted, which downstream services must reject.

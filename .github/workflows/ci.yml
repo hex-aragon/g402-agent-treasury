@@ -1,0 +1,43 @@
+name: ci
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm audit --audit-level=high
+  containers:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile: [Dockerfile.web, Dockerfile.worker, Dockerfile.akash-worker, Dockerfile.filecoin-worker]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f ${{ matrix.dockerfile }} -t x402-check:${{ strategy.job-index }} .
+  staging:
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.STAGING_BASE_URL != '' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - run: npm ci
+      - run: npm run e2e:staging
+      - run: npm run e2e:akash
+      - run: npm run e2e:filecoin
+      - run: npm run e2e:cosmos
+    env:
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+      STAGING_FACILITATOR_KEY: ${{ secrets.STAGING_FACILITATOR_KEY }}

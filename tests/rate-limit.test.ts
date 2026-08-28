@@ -1,0 +1,2 @@
+import test from "node:test";import assert from "node:assert/strict";import {consumeRateLimit} from "../lib/rate-limit.ts";
+test("shared limiter blocks after limit",async()=>{const key=`test-${crypto.randomUUID()}`;assert.equal((await consumeRateLimit(key,2,1000,100)).allowed,true);assert.equal((await consumeRateLimit(key,2,1000,100)).allowed,true);assert.equal((await consumeRateLimit(key,2,1000,100)).allowed,false)});

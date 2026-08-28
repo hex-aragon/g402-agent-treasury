@@ -1,0 +1,3 @@
+-- Compatibility pointer. The canonical, ordered schema is db/migrations/*.sql.
+-- Apply it with: npm run db:migrate
+-- This file intentionally contains no duplicate DDL so it cannot drift from migrations.

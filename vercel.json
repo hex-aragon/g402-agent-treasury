@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "regions": ["icn1"],
+  "functions": { "app/api/**/*.ts": { "maxDuration": 30 }, "app/api/akash/v1/chat/completions/route.ts": {"maxDuration": 120}, "app/api/akash/v1/deployments/route.ts": {"maxDuration": 60}, "app/api/storage/v1/upload/route.ts": {"maxDuration": 120}, "app/api/storage/v1/cids/[cid]/route.ts": {"maxDuration": 120} },
+  "crons": [{ "path": "/api/internal/index?limit=50", "schedule": "*/5 * * * *" }]
+}

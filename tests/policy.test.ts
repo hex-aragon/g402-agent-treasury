@@ -1,0 +1,8 @@
+import test from "node:test";import assert from "node:assert/strict";import {evaluatePolicy,type AgentPolicy} from "../lib/policy.ts";import type {PaymentRequirements} from "../lib/domain.ts";
+const now=new Date("2026-08-25T00:00:00Z"),agentId="11111111-1111-4111-8111-111111111111",merchantId="33333333-3333-4333-8333-333333333333",payTo="g1"+"p".repeat(38);
+const policy:AgentPolicy={id:"22222222-2222-4222-8222-222222222222",agentId,enabled:true,network:"gno:staging",allowedMerchants:[merchantId],allowedRecipients:[payTo],allowedAssets:["gno.land/r/gnoland/wugnot"],maxPerPayment:"1000",dailyBudget:"5000",monthlyBudget:"20000",approvalThreshold:"500",validFrom:"2026-01-01T00:00:00.000Z",validUntil:"2027-01-01T00:00:00.000Z",requireResourceBinding:true};
+const req:PaymentRequirements={scheme:"exact",network:"gno:staging",asset:policy.allowedAssets[0],amount:"400",payTo,maxTimeoutSeconds:60,resource:"https://api.test/x",extra:{chainId:"staging",denom:"ugnot",resourceHash:"a".repeat(64),expiresAt:2000000000,nonce:"nonce_1234567890abcdef",agentId,merchantId}};
+test("allows payment within policy",()=>assert.equal(evaluatePolicy(policy,req,{daily:"0",monthly:"0"},now).allowed,true));
+test("requires human approval over threshold",()=>assert.equal(evaluatePolicy(policy,{...req,amount:"600"},{daily:"0",monthly:"0"},now).requiresApproval,true));
+test("blocks daily budget overflow",()=>assert.equal(evaluatePolicy(policy,req,{daily:"4800",monthly:"4800"},now).reason,"daily_budget_exceeded"));
+test("blocks recipient outside allowlist",()=>assert.equal(evaluatePolicy(policy,{...req,payTo:"g1"+"z".repeat(38)},{daily:"0",monthly:"0"},now).reason,"recipient_not_allowed"));

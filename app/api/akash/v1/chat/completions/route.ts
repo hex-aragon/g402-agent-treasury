@@ -1,0 +1,9 @@
+import {NextRequest,NextResponse} from "next/server";
+import {z} from "zod";
+import {paymentRequiredHeader} from "@/lib/challenge";
+import {rateLimit,safeError} from "@/lib/http";
+import {ChatRequestSchema} from "@/packages/akash/src/domain";
+import {executeInference,offerInference} from "@/packages/akash/src/gateway";
+export const dynamic="force-dynamic";
+const Agent=z.string().uuid();
+export async function POST(req:NextRequest){const limited=await rateLimit(req,30);if(limited)return limited;try{const request=ChatRequestSchema.parse(await req.json());if(request.stream)throw new Error("streaming_not_enabled");const agentHeader=req.headers.get("x-agent-id"),agentId=agentHeader?Agent.parse(agentHeader):undefined,quoteId=req.headers.get("x-akash-quote-id"),paymentId=req.headers.get("x-payment-id"),idempotencyKey=req.headers.get("idempotency-key");if(!quoteId&&!paymentId){const resource=`${process.env.APP_URL||new URL(req.url).origin}/api/akash/v1/chat/completions`,offer=await offerInference(request,resource,agentId);return NextResponse.json({error:{message:"Payment required",type:"payment_required",code:"x402"},quote:offer.quote,estimate:offer.estimate,paymentRequirements:offer.challenge},{status:402,headers:{"payment-required":paymentRequiredHeader(offer.challenge),"cache-control":"no-store"}})}if(!quoteId||!paymentId||!idempotencyKey)throw new Error("payment_headers_incomplete");const response=await executeInference({request,quoteId,paymentId,idempotencyKey,agentId});return NextResponse.json(response,{headers:{"cache-control":"private, no-store"}})}catch(e){const message=e instanceof Error?e.message:"invalid_request",status=message.includes("budget")||message.includes("underpayment")||message.includes("payment_")||message.includes("quote_payment")?402:message==="request_in_progress"?409:message.includes("provider")?503:400;return safeError(message,status)}}

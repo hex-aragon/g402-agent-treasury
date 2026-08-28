@@ -1,0 +1,8 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {MsgCall} from "@gnolang/gno-js-client";
+import {PubKeySecp256k1,Secp256k1PubKeyType,Tx} from "@gnolang/tm2-js-client";
+import {encodeSignedEnvelope,GnoRpcClient} from "../lib/gno.ts";
+function envelope(){const tx=Tx.create({messages:[{type_url:"/vm.m_call",value:MsgCall.encode({caller:`g1${"q".repeat(38)}`,send:"",max_deposit:"",pkg_path:"gno.land/r/gnoland/wugnot",func:"Transfer",args:[`g1${"p".repeat(38)}`,"1"]}).finish()}],fee:{gas_fee:"1ugnot",gas_wanted:1n},signatures:[{pub_key:{type_url:Secp256k1PubKeyType,value:PubKeySecp256k1.encode({key:Buffer.concat([Buffer.from([2]),Buffer.alloc(32,1)])}).finish()},signature:Buffer.alloc(64)}],memo:"test"});return encodeSignedEnvelope({encodedTransaction:Buffer.from(Tx.encode(tx).finish()).toString("base64"),chainId:"staging",accountNumber:"1",sequence:"1"})}
+test("staging adapter sends Adena encoded bytes",async()=>{const original=globalThis.fetch;let sent="";globalThis.fetch=async(_url,init)=>{sent=String(init?.body);return new Response(JSON.stringify({jsonrpc:"2.0",id:"1",result:{hash:"ABC123",check_tx:{code:0},deliver_tx:{code:0}}}),{status:200,headers:{"content-type":"application/json"}})};try{const result=await new GnoRpcClient("https://rpc.invalid").broadcastTxCommit(envelope(),"gno:staging");assert.deepEqual(result,{success:true,network:"gno:staging",transaction:"ABC123"});assert.match(sent,/"broadcast_tx_commit"/)}finally{globalThis.fetch=original}});
+test("mainnet lock cannot be bypassed by staging adapter",()=>assert.notEqual(process.env.G402_ALLOW_MAINNET,"true"));

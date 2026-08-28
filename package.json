@@ -1,0 +1,55 @@
+{
+  "name": "x402-agent-gateways",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vinext build",
+    "start": "vinext start",
+    "lint": "next lint",
+    "test": "npm run test:services && npm run test:chain",
+    "test:services": "node --experimental-transform-types --test --test-concurrency=1 tests/akash-e2e.test.ts tests/akash.test.ts tests/cosmos-e2e.test.ts tests/cosmos.test.ts tests/domain.test.ts tests/filecoin-e2e.test.ts tests/filecoin.test.ts",
+    "test:chain": "node --experimental-transform-types --test --test-concurrency=1 tests/gno.test.ts tests/indexer.test.ts tests/policy.test.ts tests/rate-limit.test.ts tests/rpc-e2e.test.ts tests/store.test.ts",
+    "typecheck": "tsc --noEmit",
+    "worker": "tsx worker/indexer.ts",
+    "worker:akash": "tsx worker/akash-lifecycle.ts",
+    "worker:filecoin": "tsx worker/filecoin-indexer.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "e2e:staging": "tsx scripts/staging-e2e.ts",
+    "e2e:akash": "tsx scripts/akash-e2e.ts",
+    "e2e:filecoin": "tsx scripts/filecoin-e2e.ts",
+    "e2e:cosmos": "tsx scripts/cosmos-e2e.ts",
+    "maintenance": "tsx scripts/maintenance.ts"
+  },
+  "dependencies": {
+    "@cosmjs/proto-signing": "^0.38.1",
+    "@cosmjs/stargate": "^0.38.1",
+    "@gnolang/gno-js-client": "^2.0.4",
+    "@neondatabase/serverless": "^1.0.1",
+    "cosmjs-types": "^0.11.0",
+    "next": "16.3.2",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.37.1",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "react-server-dom-webpack": "19.2.6",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vinext": "0.0.50",
+    "vite": "8.0.13"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "displayName": "x402 Agent Gateways"
+}

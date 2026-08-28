@@ -1,0 +1,2 @@
+create table if not exists akash_requests(id varchar(128) primary key,quote_id uuid not null references service_quotes(id),agent_id uuid,kind varchar(20) not null check(kind in('inference','deployment')),status varchar(20) not null check(status in('processing','succeeded','failed')),response jsonb,error varchar(500),created_at timestamptz not null default now(),updated_at timestamptz not null default now());
+insert into schema_migrations(version) values('007_akash_requests') on conflict do nothing;
