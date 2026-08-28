@@ -1,0 +1,1 @@
+import{n as e}from"./server-au-4bHZC.js";import{r as t,t as n}from"./http-DpyxjIO-.js";import{n as r}from"./observability-BvIhvzTy.js";var i=`force-dynamic`;async function a(i){return n(i)?e.json(r.snapshot(),{headers:{"cache-control":`no-store`}}):t(`unauthorized`,401)}export{a as GET,i as dynamic};

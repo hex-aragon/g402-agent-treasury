@@ -9,6 +9,10 @@ Protected assets are buyer funds, agent budgets, merchant revenue, approval deci
 | Threat | Control | Verification |
 | --- | --- | --- |
 | Recipient, amount or asset substitution | Decode one supported Amino message and compare exact fields | Gno tests |
+| Contract-path or call-argument substitution | Realm mode pins `g402pay`, `Pay`, exact send coin, payment ID, merchant, amount, resource hash and nonce | Gno realm-mode tests |
+| Contract receipt spoofing through another realm | Facilitator pins the deployed package path; indexer matches event fields to the preclaimed payment | Gno/indexer tests |
+| Inter-realm payment confusion | `g402pay` accepts only a direct EOA `IsUserCall`, verifies origin/caller equality and forwards from its own realm account | Gno contract tests/live acceptance |
+| Contract replay | Persistent AVL payment-ID uniqueness plus database payment-ID and nonce constraints | Gno/store tests |
 | Signer substitution | Derive the g1 address from the signed secp256k1 public key | Gno tests |
 | Resource/cross-chain replay | Signed chain ID, payment ID, random nonce and SHA-256 method/URL binding in memo | domain/Gno tests |
 | Duplicate broadcast | Unique payment ID, fingerprint and network/payer/nonce constraints; claim before RPC | store tests/migrations |
@@ -26,6 +30,8 @@ Protected assets are buyer funds, agent budgets, merchant revenue, approval deci
 ## Residual risks and release restrictions
 
 - Gno has no EIP-3009 equivalent. The pinned official Gno/TM2 codec passes a signed SDK vector, but a live Adena staging transaction must still be captured and verified before non-mock facilitator broadcast is promoted.
+- `g402pay` source still requires compilation with the official target-chain `gno` binary and one funded staging deployment. Do not enable realm mode from source review alone.
+- The realm currently supports native `ugnot` only. GRC20 stays on the direct-transfer path until a separately reviewed allowance/pull design is implemented.
 - A single RPC is not Byzantine-resistant. Promotion requires two independent RPC providers and block/hash quorum.
 - Bearer keys are coarse-grained. Use an identity-aware gateway for per-merchant identities and rotate keys.
 - Postgres rate buckets require retention. Per-instance metrics and structured logs need platform aggregation.

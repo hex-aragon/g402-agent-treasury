@@ -4,9 +4,13 @@
 
 Apply migrations and use the seed only in disposable staging. Pass tests, typecheck, build, health and staging E2E. Web and worker use the same database. Keep mainnet false everywhere.
 
+For realm mode, first run `gno fmt`, `gno lint` and `gno test` using the official binary for the target release, deploy with `npm run contract:gno:deploy`, query the package source, and complete the acceptance list in `docs/GNO_CONTRACT.md`. Enable `G402_PAYMENT_MODE=realm` only after the deployed path and merchant receipt have been independently verified.
+
 ## Emergency stop
 
 Set G402_ENABLE_SETTLEMENT=false, redeploy, verify health and leave verification/explorer online. Record actor and incident ID. Do not delete rows. Reconcile transactions already accepted by an RPC by hash.
+
+If the on-chain realm is suspected, also set `G402_PAYMENT_MODE=direct`, keep settlement disabled, and reconcile every `G402Payment` event against merchant balance changes before recovery. A deployed realm is immutable; a contract defect requires a new package path and explicit configuration change.
 
 ## Alerts and first response
 

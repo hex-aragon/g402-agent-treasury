@@ -1,9 +1,13 @@
 export default function Developers(){return <><div className="pageHead"><div className="eyebrow">Integration</div><h1>One HTTP round trip.</h1><p>A resource server returns 402; the client signs locally; g402 verifies and settles.</p></div><div className="grid twoCol"><div className="card feature"><h3>1. Declare payment terms</h3><pre className="code">{`{
   "scheme": "exact",
   "network": "gno:staging",
-  "asset": "gno.land/r/gnoland/wugnot",
+  "asset": "ugnot",
   "amount": "1000",
-  "payTo": "g1…"
+  "payTo": "g1…",
+  "extra": {
+    "paymentMode": "realm",
+    "contractPath": "gno.land/r/g1…/g402pay"
+  }
 }`}</pre></div><div className="card feature"><h3>2. Verify and settle</h3><pre className="code">{`POST /api/v1/verify
 Authorization: Bearer <server-key>
 

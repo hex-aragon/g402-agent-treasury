@@ -1,1 +1,0 @@
-import{n as e}from"./server-BMMMjyxk.js";async function t(){return e.json({kinds:[{x402Version:2,scheme:`exact`,network:process.env.GNO_NETWORK_ID||`gno:staging`,assets:[process.env.GNO_ASSET||`gno.land/r/gnoland/wugnot`],extra:{chainId:process.env.GNO_CHAIN_ID||`staging`,gasSponsored:!1}}]},{headers:{"cache-control":`public, max-age=60`}})}export{t as GET};

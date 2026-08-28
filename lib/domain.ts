@@ -11,7 +11,8 @@ export const PaymentRequirementsSchema = z.object({
   resource: z.string().url().max(2048), description: z.string().max(280).optional(),
   mimeType: z.string().max(100).optional(), extra: z.object({ chainId: z.string().min(1).max(80),
     denom: z.string().min(1).max(80), resourceHash: z.string().length(64), expiresAt: z.number().int().positive(),
-    nonce: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/), merchantId: z.string().uuid().optional(),
+    nonce: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/), paymentMode:z.enum(["direct","realm"]).optional(),
+    contractPath:z.string().regex(/^gno\.land\/r\/[a-z0-9_\/-]+\/g402pay$/).max(256).optional(), merchantId: z.string().uuid().optional(),
     agentId: z.string().uuid().optional(), policyId: z.string().uuid().optional(), quoteId:z.string().uuid().optional() }).strict()
 }).strict();
 

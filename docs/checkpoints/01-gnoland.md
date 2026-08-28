@@ -1,6 +1,6 @@
 # Checkpoint 01 — GnoLand g402
 
-Status: code-complete for local/mock staging; live-chain promotion is blocked by wallet acceptance and deployment credentials.
+Status: facilitator and g402pay realm code-complete for local/mock staging; live-chain promotion is blocked only by an operator staging address/key, faucet funds and Adena acceptance.
 
 ## Completed
 
@@ -13,12 +13,15 @@ Status: code-complete for local/mock staging; live-chain promotion is blocked by
 - persistent block/checkpoint indexer, confirmations, rewind and reverted payments
 - shared rate limiting, audit, metrics/alerts, migrations/seed and paid sample
 - explorer, wallet, CI, Docker/Vercel files, threat model and runbook
+- native-GNOT `g402pay.Pay` realm with direct-EOA enforcement, atomic merchant forwarding, immutable receipts and events
+- realm-mode facilitator/Adena transaction construction and exact contract-path, send, ID, recipient, amount, resource-hash and nonce verification
+- contract event indexing with confirmation and reorg rollback
 
 ## External blockers
 
-1. The official codec and signed-vector tests pass locally; a live Adena extension transaction on the selected staging RPC is still required for wallet/browser acceptance.
-2. Database, staging merchant, facilitator keys and operator RPC credentials are absent here.
-3. Vercel API access is blocked in this execution environment; the repo remains directly importable.
+1. The current execution host does not have the official `gno`/`gnokey` release binaries or a funded staging key, so the realm cannot be compiled and uploaded here.
+2. A live Adena realm-call transaction on the selected staging RPC is still required for wallet/browser acceptance.
+3. Database, staging merchant and facilitator keys are absent from the hosted runtime.
 
 ## Live staging acceptance
 

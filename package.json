@@ -23,7 +23,8 @@
     "e2e:akash": "tsx scripts/akash-e2e.ts",
     "e2e:filecoin": "tsx scripts/filecoin-e2e.ts",
     "e2e:cosmos": "tsx scripts/cosmos-e2e.ts",
-    "maintenance": "tsx scripts/maintenance.ts"
+    "maintenance": "tsx scripts/maintenance.ts",
+    "contract:gno:deploy": "bash scripts/deploy-gno-contract.sh"
   },
   "dependencies": {
     "@cosmjs/proto-signing": "^0.38.1",

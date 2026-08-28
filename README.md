@@ -15,6 +15,7 @@ Every mainnet or fund-moving integration is disabled by default.
 | --- | --- |
 | app | dashboards and versioned HTTP APIs |
 | lib | Gno facilitator and shared web/runtime services |
+| contracts/gno/g402pay | atomic native-GNOT payment realm and on-chain receipts |
 | packages/x402-core | canonical hashing, budget and circuit primitives |
 | packages/akash | pricing, routing, metering, settlement and deployments |
 | packages/filecoin | CID, storage pricing, IPFS/Filecoin Pay/Paych adapters |
@@ -55,6 +56,8 @@ The CI workflow also builds all four container images. A manual staging workflow
 - Cosmos: /api/cosmos/v1/chains, /api/cosmos/v1/verify, /api/cosmos/v1/settle, /api/cosmos/v1/policies
 
 The first call to a paid route returns HTTP 402 with a Payment-Required header and quote-bound requirements. The retry supplies quote, payment and idempotency headers.
+
+Set `G402_PAYMENT_MODE=realm` and `G402_CONTRACT_PATH` after deploying `contracts/gno/g402pay` to make challenges use the atomic on-chain payment realm. See `docs/GNO_CONTRACT.md`.
 
 ## Deployment and safety
 
