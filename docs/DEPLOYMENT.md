@@ -1,29 +1,45 @@
 # Deployment guide
 
-## Topology
+## Primary topology: ChatGPT Sites + D1
 
-Deploy the root Next.js app to Vercel or a Node 24 container. Attach one PostgreSQL 17-compatible database. Deploy Dockerfile.worker, Dockerfile.akash-worker and Dockerfile.filecoin-worker as independent singleton-capable services; database leases prevent duplicate active workers.
+The Gno facilitator and Scan deploy as one Vinext/Cloudflare Site. `.openai/hosting.json` declares the logical `DB` D1 binding, and the build copies `drizzle/` to `dist/.openai/drizzle` so Sites can apply the schema during deployment.
 
-## GitHub and Vercel
+Required non-secret environment values:
 
-1. Push/import the repository and require the CI verify/container jobs.
-2. Create preview and staging Vercel environments. Copy keys from .env.example through the provider secret UI.
-3. Keep all mainnet and settlement flags false on the first deployment.
-4. Run npm run db:migrate once from a protected release job and load db/seed.sql only in disposable staging.
-5. Verify /api/health reports all mainnet locks true.
-6. Run the four staging scripts and the manual wallet acceptance steps in each checkpoint.
-7. Enable one testnet integration at a time.
+```text
+FACILITATOR_PUBLIC=true
+G402_SELF_TEST_MODE=true
+G402_PAYMENT_MODE=direct
+G402_ENABLE_SETTLEMENT=true
+G402_ALLOW_MAINNET=false
+GNO_NETWORK_ID=gno:pearl-1
+GNO_CHAIN_ID=pearl-1
+GNO_RPC_URL=https://rpc.pearl.testnets.gno.land
+GNO_ASSET=gno.land/r/gnoland/wugnot
+GNO_DENOM=ugnot
+INDEXER_CONFIRMATIONS=2
+```
 
-Vercel duration settings are declared in vercel.json. If the plan cannot support them, run inference/storage routes in the web container instead. Large IPFS uploads need a future presigned/direct-upload service because serverless request size is intentionally bounded.
+Do not set a made-up merchant address. Self-test challenges accept the connected Adena address as `payTo`; real merchant deployments set `G402_SELF_TEST_MODE=false` and their verified address in `G402_MERCHANT_ADDRESS`.
 
-## Worker deployment
+Release order:
 
-Workers share DATABASE_URL but use separate credentials and network egress. Set one replica initially. Health is the worker lease heartbeat and queue/checkpoint age. Never place Akash Console, Lotus, wallet or provider keys in the web browser.
+1. Run `npm ci`, `npm test`, `npm run typecheck`, Drizzle check and the Sites checkpoint build.
+2. Update Site environment variables without placing wallet keys or mnemonics in the deployment.
+3. Save a Site version and deploy it privately.
+4. Verify deployment status, then open `/api/health` and `/scan` while authenticated.
+5. Confirm D1 migration, Pearl chain ID, bounded Scan bootstrap and mainnet lock before attempting a wallet signature.
 
-## Required backups and monitoring
+## Indexing model
 
-Enable point-in-time recovery, daily restore tests and encrypted secret rotation. Aggregate structured JSON logs from all replicas. Page on settlement failure, index lag, open circuits, overdue deployment closure, Filecoin proof degradation, stuck service requests and any mainnet flag change. Run npm run maintenance on a protected schedule and alert on exit code 2.
+The Site does not run an infinite worker. `/scan` bootstraps up to eight recent blocks when empty. Authenticated `POST /api/internal/index` advances a bounded batch of up to 30 blocks. Each block is replay-safe; checkpoints move only after its statements are written. Forks are retained and canonical flags are rewound to a common ancestor.
 
-## External blockers in this environment
+For continuous indexing, deploy the optional Node/PostgreSQL worker and point both web and worker at one PostgreSQL database. That is a separate topology with migrations under `db/migrations`; it is not required by the Sites/D1 product.
 
-Vercel API calls are blocked by the execution environment, and no owner credentials or live testnet wallets are present. Source, CI, import metadata and deployment docs are complete; no deployment success is claimed.
+## Vercel status
+
+This repository currently builds with Vinext and the Cloudflare runtime. It is therefore not a drop-in Vercel project, and the obsolete `vercel.json` was removed. A Vercel port requires a standard Next build, Neon/PostgreSQL and a scheduler that performs authenticated POST indexing or a persistent external worker.
+
+## Monitoring and recovery
+
+Alert on D1 errors, RPC chain mismatch, settlement failures, index lag above 20 blocks, reorgs and any mainnet flag change. Preserve payment, challenge, audit, block, transaction and event rows during incidents. Never repair a checkpoint by hand; rewind through the documented reconciliation procedure.

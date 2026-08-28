@@ -25,8 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f ${{ matrix.dockerfile }} -t x402-check:${{ strategy.job-index }} .
-  staging:
-    if: ${{ github.event_name == 'workflow_dispatch' && vars.STAGING_BASE_URL != '' }}
+  public-staging:
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.PUBLIC_STAGING_BASE_URL != '' }}
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -39,5 +39,5 @@ jobs:
       - run: npm run e2e:filecoin
       - run: npm run e2e:cosmos
     env:
-      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+      STAGING_BASE_URL: ${{ vars.PUBLIC_STAGING_BASE_URL }}
       STAGING_FACILITATOR_KEY: ${{ secrets.STAGING_FACILITATOR_KEY }}

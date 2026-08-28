@@ -9,8 +9,8 @@ if [[ ! "$GNO_DEPLOYER_ADDRESS" =~ ^g1[023456789acdefghjklmnpqrstuvwxyz]{38}$ ]]
   exit 2
 fi
 
-GNO_CHAIN_ID="${GNO_CHAIN_ID:-staging}"
-GNO_RPC_URL="${GNO_RPC_URL:-https://rpc.staging.gno.land:443}"
+GNO_CHAIN_ID="${GNO_CHAIN_ID:-pearl-1}"
+GNO_RPC_URL="${GNO_RPC_URL:-https://rpc.pearl.testnets.gno.land}"
 if [[ "$GNO_CHAIN_ID" != "staging" && "$GNO_CHAIN_ID" != "pearl-1" ]]; then
   echo "only staging and pearl-1 contract deployment are allowed" >&2
   exit 3

@@ -25,7 +25,7 @@ export const PaymentPayloadSchema = z.object({
 export type PaymentRequirements = z.infer<typeof PaymentRequirementsSchema>;
 export type PaymentPayload = z.infer<typeof PaymentPayloadSchema>;
 export type VerificationResult = { isValid: boolean; invalidReason?: string; payer?: string };
-export type SettlementResult = { success: boolean; transaction?: string; network: string; errorReason?: string };
+export type SettlementResult = { success: boolean; transaction?: string; network: string; errorReason?: string; pending?:boolean; blockHeight?:number };
 
 export function paymentFingerprint(payload:PaymentPayload, requirements:PaymentRequirements):string {
   return createHash("sha256").update(JSON.stringify({
@@ -43,7 +43,9 @@ export function constantTimeApiKeyMatch(value: string, allowed: string[]): boole
   const hash = (x:string) => createHash("sha256").update(x).digest();
   return allowed.some(k => timingSafeEqual(hash(value), hash(k)));
 }
-export function assertSettlementAllowed(network: string): void {
+export function assertSettlementAllowed(network: string,chainId?:string): void {
   if (process.env.G402_ENABLE_SETTLEMENT !== "true") throw new Error("settlement_disabled");
-  if (network === "gno:mainnet" && process.env.G402_ALLOW_MAINNET !== "true") throw new Error("mainnet_locked");
+  const configuredNetwork=process.env.GNO_NETWORK_ID||"gno:pearl-1",configuredChain=process.env.GNO_CHAIN_ID||"pearl-1";
+  if ((network === "gno:mainnet"||chainId==="mainnet"||configuredChain==="mainnet") && process.env.G402_ALLOW_MAINNET !== "true") throw new Error("mainnet_locked");
+  if(network!==configuredNetwork||Boolean(chainId&&chainId!==configuredChain))throw new Error("network_not_configured");
 }

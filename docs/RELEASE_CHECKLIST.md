@@ -1,4 +1,4 @@
-# Staging release checklist
+# Pearl release checklist
 
 ## Automated
 
@@ -6,14 +6,16 @@
 - all tests, strict typecheck and Next production build pass
 - npm audit reports no high vulnerabilities
 - all Dockerfiles build in CI
-- migrations apply in order to a clean database
+- Drizzle migration applies to a clean D1 database
 - health exposes every lock without secrets
 
 ## Gno
 
-- Adena SignTx golden transaction verifies and broadcasts on staging
+- D1 challenge, payment, rate-limit, block, transaction and event tables exist
+- Scan bootstraps recent Pearl blocks and searches hash, address, payment ID and height
+- Adena `SignTx` current account model verifies and broadcasts on Pearl
 - duplicate, altered fingerprint, approval and reorg drills pass
-- worker reaches canonical head and restore/replay is tested
+- bounded index sync follows canonical head and restore/replay is tested
 
 ## Akash
 
@@ -42,4 +44,4 @@
 - point-in-time restore and incident drill recorded
 - privacy/legal review completed for prompts and stored data
 - two-person approval is configured for every mainnet flag
-- no mainnet flag is enabled in the staging release
+- no mainnet flag is enabled in the Pearl release

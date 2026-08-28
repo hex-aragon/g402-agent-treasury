@@ -20,15 +20,15 @@ gno lint contracts/gno/g402pay
 gno test contracts/gno/g402pay
 ```
 
-## Staging deployment
+## Pearl deployment
 
 Never put a mnemonic or private key in this repository or environment file. `GNO_KEY_NAME` references a key already stored in the local `gnokey` keybase.
 
 ```bash
 export GNO_DEPLOYER_ADDRESS=g1...
-export GNO_KEY_NAME=staging-deployer
-export GNO_CHAIN_ID=staging
-export GNO_RPC_URL=https://rpc.staging.gno.land:443
+export GNO_KEY_NAME=pearl-deployer
+export GNO_CHAIN_ID=pearl-1
+export GNO_RPC_URL=https://rpc.pearl.testnets.gno.land
 npm run contract:gno:deploy
 ```
 
@@ -41,12 +41,14 @@ GNO_ASSET=ugnot
 GNO_DENOM=ugnot
 ```
 
-Keep `G402_ALLOW_MAINNET=false`. The deployment script refuses every chain except `staging` and `pearl-1`.
+Keep `G402_ALLOW_MAINNET=false`. The deployment script refuses every chain except `staging` and `pearl-1`. Pearl is the current release target; Staging remains a legacy developer network.
+
+The hosted product currently uses direct WUGNOT transfer mode. Do not set `G402_PAYMENT_MODE=realm` until the package exists at the configured Pearl path and every acceptance item below has passed.
 
 ## Acceptance
 
 - Query the deployed package source and `PaymentCount`.
-- Complete one Adena `Pay` call on staging.
+- Complete one Adena `Pay` call on Pearl.
 - Confirm merchant balance increase, unique receipt, `G402Payment` event and facilitator settlement.
 - Replay the same payment ID and verify the realm rejects it.
 - Mutate recipient, amount, resource hash, nonce and contract path and verify the facilitator rejects each transaction before broadcast.

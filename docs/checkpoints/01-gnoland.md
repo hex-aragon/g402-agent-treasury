@@ -1,6 +1,6 @@
 # Checkpoint 01 — GnoLand g402
 
-Status: facilitator and g402pay realm code-complete for local/mock staging; live-chain promotion is blocked only by an operator staging address/key, faucet funds and Adena acceptance.
+Status: the Pearl direct-WUGNOT facilitator and D1 Scan are release-ready for the private Site. Gno mainnet is locked. The optional `g402pay` realm is source-complete but not deployed.
 
 ## Completed
 
@@ -8,21 +8,21 @@ Status: facilitator and g402pay realm code-complete for local/mock staging; live
 - Adena connection and browser Sign request for native/GRC20 transfers
 - official gno-js-client/TM2 transaction decoding, sign-byte reconstruction, secp256k1 verification and signer-address derivation
 - resource, chain, nonce, expiry, ID, recipient, asset and amount binding
-- PostgreSQL idempotency, replay protection and durable approvals
-- agent allowlists, per-payment, daily/monthly budgets and approval threshold
-- persistent block/checkpoint indexer, confirmations, rewind and reverted payments
-- shared rate limiting, audit, metrics/alerts, migrations/seed and paid sample
-- explorer, wallet, CI, Docker/Vercel files, threat model and runbook
+- D1-issued challenges, atomic nonce/payment claims and durable self-test receipts
+- shared D1 rate limiting, audit log and paid sample resource binding
+- persistent block/checkpoint indexer, fork history, common-ancestor rewind, confirmations and reverted payments
+- block/transaction/address/payment search, wallet flow, health and operations dashboard
+- optional PostgreSQL agent allowlists, per-payment/day/month budgets and approval threshold
 - native-GNOT `g402pay.Pay` realm with direct-EOA enforcement, atomic merchant forwarding, immutable receipts and events
 - realm-mode facilitator/Adena transaction construction and exact contract-path, send, ID, recipient, amount, resource-hash and nonce verification
 - contract event indexing with confirmation and reorg rollback
 
-## External blockers
+## Remaining external acceptance
 
-1. The current execution host does not have the official `gno`/`gnokey` release binaries or a funded staging key, so the realm cannot be compiled and uploaded here.
-2. A live Adena realm-call transaction on the selected staging RPC is still required for wallet/browser acceptance.
-3. Database, staging merchant and facilitator keys are absent from the hosted runtime.
+1. A user must connect Adena to Pearl, obtain faucet WUGNOT and approve one live `SignTx` in the browser. No private key is held by the service.
+2. Realm mode requires the official Pearl `gno`/`gnokey` release, a funded deployer and a separately reviewed deployment path.
+3. D1 self-test does not claim persistent agent policy/approval administration; that feature remains the PostgreSQL operator mode.
 
 ## Live staging acceptance
 
-Run the staging E2E script, complete one Adena signature in the wallet, settle only on staging, confirm settled status, retrieve the sample with x-payment-id, then test duplicate, altered fingerprint, expiry, approval, RPC outage and reorg cases.
+Open `/wallet`, connect Adena on `pearl-1`, sign the self-transfer challenge, settle, retrieve the paid sample and confirm the transaction in `/scan`. Then exercise duplicate ID, altered terms, expiry, RPC outage and reorg recovery. Do not enable realm mode or mainnet during this acceptance.

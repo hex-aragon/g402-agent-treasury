@@ -1,15 +1,1 @@
-export default function Developers(){return <><div className="pageHead"><div className="eyebrow">Integration</div><h1>One HTTP round trip.</h1><p>A resource server returns 402; the client signs locally; g402 verifies and settles.</p></div><div className="grid twoCol"><div className="card feature"><h3>1. Declare payment terms</h3><pre className="code">{`{
-  "scheme": "exact",
-  "network": "gno:staging",
-  "asset": "ugnot",
-  "amount": "1000",
-  "payTo": "g1…",
-  "extra": {
-    "paymentMode": "realm",
-    "contractPath": "gno.land/r/g1…/g402pay"
-  }
-}`}</pre></div><div className="card feature"><h3>2. Verify and settle</h3><pre className="code">{`POST /api/v1/verify
-Authorization: Bearer <server-key>
-
-POST /api/v1/settle
-Idempotency-Key: pay_…`}</pre></div><div className="card feature"><h3>Fail closed</h3><p>Settlement is disabled by default. Mainnet requires a second explicit production lock and supported chain transfers.</p></div><div className="card feature"><h3>Idempotent by design</h3><p>Payment identifiers are unique and persisted before any settlement result is served.</p></div></div></>}
+export default function Developers(){return <><div className="pageHead"><div className="eyebrow">x402 v2 integration</div><h1>Facilitator API</h1><p>challenge는 서버에서 발급·저장되며, verify와 settle은 동일한 조건만 허용합니다.</p></div><div className="grid twoCol"><div className="card feature"><h3>1. Issue terms</h3><pre className="code">{"POST /api/v1/challenges\nContent-Type: application/json\n\n{\n  \"resource\": \"https://api.example.com/weather\",\n  \"method\": \"GET\",\n  \"amount\": \"1000\",\n  \"payTo\": \"g1...\"\n}"}</pre><p className="mutedText">`payTo` is accepted only while self-test mode is enabled. Merchant mode uses the server-configured address.</p></div><div className="card feature"><h3>2. Verify and settle</h3><pre className="code">{"POST /api/v1/verify\nPOST /api/v1/settle\nContent-Type: application/json\n\n{\n  \"paymentPayload\": { \"...\": \"Adena signed Tx\" },\n  \"paymentRequirements\": { \"...\": \"issued terms\" }\n}"}</pre></div><div className="card feature"><h3>3. Read the canonical scan</h3><pre className="code">{"GET /api/v1/scan?q=<tx|payment|address|height>\nGET /api/v1/payments?limit=50\nGET /api/health"}</pre></div><div className="card feature"><h3>Security model</h3><p>D1 원자적 nonce 선점, payment ID idempotency, resource hash, exact asset rail, TM2 서명 검증, RPC chain ID pinning과 reorg rollback을 적용합니다.</p></div></div><div className="card feature" style={{marginTop:14}}><h3>Current deployment</h3><div className="statusLine"><span>Network</span><b>gno:pearl-1</b></div><div className="statusLine"><span>Payment rail</span><b>WUGNOT direct transfer</b></div><div className="statusLine"><span>Mainnet</span><b className="pending">Locked</b></div><div className="statusLine"><span>Contract realm mode</span><b>Available after g402pay deployment</b></div></div></>}

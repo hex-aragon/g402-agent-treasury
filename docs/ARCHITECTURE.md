@@ -1,23 +1,18 @@
 # Architecture
 
-The Next.js control plane is stateless. PostgreSQL owns idempotency, nonce uniqueness, policies, quotes, usage, receipts, audit events and index checkpoints. Browser wallets only sign. Provider and chain credentials exist only in server/worker secret stores.
+The active Gno product is one authenticated ChatGPT Site backed by Cloudflare D1. Adena keeps the private key in the browser. The server persists a challenge before accepting a signature, verifies the official TM2 transaction bytes, atomically claims the nonce/payment ID, pins the RPC chain ID, broadcasts, and records the result. Scan reads `/block` and `/block_results` together and stores fork-preserving history.
 
-~~~text
-Agent / Wallet
-      |
-      | HTTP 402 -> signed payment -> paid retry
-      v
-Next.js control plane ------ PostgreSQL
-  |       |       |              |
-  Gno     Akash   Storage        audit / budgets / quotes
-  |       |       |
-  RPC     AI + Console          IPFS + Filecoin Pay + Lotus
-  |       |       |
-Gno indexer  Akash worker  Filecoin receipt worker
-~~~
+```mermaid
+flowchart TD
+  W["Adena wallet"] -->|"402 + SignTx"| F["Facilitator"]
+  F --> D["D1 ledger"]
+  F --> R["Pearl RPC"]
+  R --> I["Bounded Scan indexer"]
+  I --> D
+```
 
-The packages share canonical request hashing, integer budget arithmetic, settlement interfaces and circuit breaking. Chain-specific codecs remain isolated because Gno TM2, Cosmos SDK Protobuf, Filecoin payment rails and Akash service accounting have different trust and finality models.
+D1 owns issued challenges, payment claims, shared rate buckets, audit rows, blocks, transactions, events and checkpoints. Direct WUGNOT mode requires no server wallet and no deployed realm. Realm mode is a separate rail that may be enabled only after `g402pay` is deployed and accepted on the target chain.
 
-State transitions are monotonic except explicit reconciliation states such as reverted or degraded. Every external write follows durable claim-before-call idempotency. Human approval transitions use compare-and-swap.
+The alternative container topology uses PostgreSQL plus persistent Gno, Akash and Filecoin workers. The shared packages retain canonical request hashing, integer arithmetic and chain-specific codecs, but their live integrations remain independently locked.
 
-See the product threat models for trust assumptions and residual risk.
+Payment state is monotonic during normal processing: an indexer-confirmed `settled` row cannot be downgraded by a later facilitator response. `reverted` is the explicit exception when a canonical block is removed.
