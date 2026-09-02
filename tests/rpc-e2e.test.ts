@@ -23,10 +23,11 @@ test("Pearl status uses the runtime native fetch transport",async()=>{
 test("native transport remains compatible with the official Tm2 client",async()=>{
   const originalFetch=globalThis.fetch;
   globalThis.fetch=async(input,init)=>{
-    assert.equal(String(input),"https://rpc.test/health");
-    assert.equal(init?.method,"GET");
-    assert.equal(init?.body,undefined);
-    return new Response(JSON.stringify({jsonrpc:"2.0",id:"",result:{}}),{headers:{"content-type":"application/json"}});
+    assert.equal(String(input),"https://rpc.test/");
+    assert.equal(init?.method,"POST");
+    const request=JSON.parse(String(init?.body)) as {id:unknown;method:string};
+    assert.equal(request.method,"health");
+    return new Response(JSON.stringify({jsonrpc:"2.0",id:request.id,result:{}}),{headers:{"content-type":"application/json"}});
   };
   try{assert.equal(await (await connectNativeTm2("https://rpc.test")).health(),null)}finally{globalThis.fetch=originalFetch}
 });

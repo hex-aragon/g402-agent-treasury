@@ -19,29 +19,25 @@ export function gnoAddressFromPubkey(key:Buffer){if(key.length!==33)throw new Er
 function terms(msg:Record<string,unknown>){const type=String(msg["@type"]||"");if(type==="/bank.MsgSend")return {kind:"native",payer:String(msg.from_address||""),recipient:String(msg.to_address||""),amount:String(msg.amount||"")};if(type==="/vm.m_call")return {kind:"grc20",payer:String(msg.caller||""),recipient:Array.isArray(msg.args)?String(msg.args[0]||""):"",amount:Array.isArray(msg.args)?String(msg.args[1]||""):"",pkgPath:String(msg.pkg_path||""),func:String(msg.func||""),send:String(msg.send||""),maxDeposit:String(msg.max_deposit||"")};return {kind:"unsupported",payer:"",recipient:"",amount:""}}
 export function verifyGnoPayment(payload:PaymentPayload,req:PaymentRequirements,now=Date.now(),options:{skipCrypto?:boolean}={}):VerificationResult{try{if(payload.network!==req.network)return {isValid:false,invalidReason:"network_mismatch"};if(Math.abs(now/1000-payload.payload.createdAt)>req.maxTimeoutSeconds||now/1000>req.extra.expiresAt)return {isValid:false,invalidReason:"payment_expired"};const tx=decodeSignedTransaction(payload.payload.signedTx),t=terms(tx.signDoc.msgs[0]);if(tx.signDoc.chain_id!==req.extra.chainId)return {isValid:false,invalidReason:"chain_id_mismatch"};if(t.payer!==payload.payload.payer)return {isValid:false,invalidReason:"payer_mismatch"};const nativeAsset=req.asset===req.extra.denom&&!req.asset.includes("/"),grc20Asset=req.asset.includes("/");const native=nativeAsset&&t.kind==="native"&&t.recipient===req.payTo&&t.amount===`${req.amount}${req.extra.denom}`,grc20=grc20Asset&&t.kind==="grc20"&&t.pkgPath===req.asset&&t.func==="Transfer"&&t.send===""&&t.maxDeposit===""&&t.recipient===req.payTo&&t.amount===req.amount,args=t.kind==="grc20"?(tx.signDoc.msgs[0].args as unknown[]):[],realm=req.extra.paymentMode==="realm"&&t.kind==="grc20"&&t.pkgPath===req.extra.contractPath&&t.func==="Pay"&&t.send===`${req.amount}${req.extra.denom}`&&t.maxDeposit===""&&args.length===5&&String(args[0])===payload.payload.paymentId&&String(args[1])===req.payTo&&String(args[2])===req.amount&&String(args[3])===req.extra.resourceHash&&String(args[4])===req.extra.nonce;if(!(req.extra.paymentMode==="realm"?realm:(native||grc20)))return {isValid:false,invalidReason:"payment_terms_mismatch"};if(tx.signDoc.memo!==`g402:${payload.payload.paymentId}:${req.extra.nonce}:${req.extra.resourceHash}`)return {isValid:false,invalidReason:"memo_binding_mismatch"};if(!options.skipCrypto){if(gnoAddressFromPubkey(tx.publicKey)!==payload.payload.payer)return {isValid:false,invalidReason:"public_key_mismatch"};if(!verifyGnoSignature(tx))return {isValid:false,invalidReason:"invalid_signature"}}return {isValid:true,payer:payload.payload.payer}}catch(e){return {isValid:false,invalidReason:e instanceof Error?e.message:"invalid_payload"}}}
 function hex(bytes:Uint8Array|undefined){return bytes?Buffer.from(bytes).toString("hex").toUpperCase():""}
-async function nativeTm2Execute(url:string,request:Parameters<RpcClient["execute"]>[0]):Promise<Awaited<ReturnType<RpcClient["execute"]>>>{
+function nativeTm2Url(url:string){
   const endpoint=new URL(url),local=endpoint.hostname==="localhost"||endpoint.hostname==="127.0.0.1";
   if((endpoint.protocol!=="https:"&&!(local&&endpoint.protocol==="http:"))||endpoint.username||endpoint.password||endpoint.hash||endpoint.search)throw new Error("invalid_gno_rpc_url");
-  if(typeof request.method!=="string"||!/^[a-z][a-z0-9_]{0,63}$/.test(request.method))throw new Error("invalid_gno_rpc_method");
-  const rpcUrl=new URL(endpoint),params=request.params;
-  rpcUrl.pathname=`${rpcUrl.pathname.replace(/\/$/,"")}/${request.method}`;
-  if(params!==undefined){
-    if(!params||typeof params!=="object"||Array.isArray(params))throw new Error("invalid_gno_rpc_params");
-    for(const [key,value] of Object.entries(params)){
-      if(value===undefined)continue;
-      if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key)||(typeof value!=="string"&&typeof value!=="number"&&typeof value!=="boolean")||(typeof value==="number"&&!Number.isFinite(value)))throw new Error("invalid_gno_rpc_params");
-      rpcUrl.searchParams.set(key,String(value));
-    }
-  }
-  let response:Response;
-  try{response=await fetch(rpcUrl,{method:"GET",headers:{accept:"application/json"},redirect:"error",signal:AbortSignal.timeout(10_000)})}catch{throw new Error("gno_rpc_unavailable")}
+  return endpoint;
+}
+async function nativeTm2Response(response:Response,expectedId:unknown){
   if(!response.ok)throw new Error("gno_rpc_unavailable");
   let parsed:unknown;
   try{parsed=await response.json()}catch{throw new Error("gno_rpc_unavailable")}
   if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error("gno_rpc_unavailable");
   const body=parsed as {jsonrpc?:unknown;id?:unknown;result?:unknown;error?:unknown};
-  if(body.jsonrpc!=="2.0"||(body.id!==""&&body.id!==request.id)||body.error||!("result" in body))throw new Error(body.error?`gno_rpc_error:${JSON.stringify(body.error).slice(0,400)}`:"gno_rpc_unavailable");
-  return {...body,id:request.id} as Awaited<ReturnType<RpcClient["execute"]>>;
+  if(body.jsonrpc!=="2.0"||body.id!==expectedId||body.error||!("result" in body))throw new Error(body.error?`gno_rpc_error:${JSON.stringify(body.error).slice(0,400)}`:"gno_rpc_unavailable");
+  return body;
+}
+async function nativeTm2Execute(url:string,request:Parameters<RpcClient["execute"]>[0]):Promise<Awaited<ReturnType<RpcClient["execute"]>>>{
+  const endpoint=nativeTm2Url(url);
+  let response:Response;
+  try{response=await fetch(endpoint,{method:"POST",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify(request),redirect:"error",signal:AbortSignal.timeout(10_000)})}catch{throw new Error("gno_rpc_unavailable")}
+  return await nativeTm2Response(response,request.id) as Awaited<ReturnType<RpcClient["execute"]>>;
 }
 export async function connectNativeTm2(url:string):Promise<Tm2Client>{
   const client:RpcClient={disconnect(){},execute:request=>nativeTm2Execute(url,request)};
@@ -49,7 +45,10 @@ export async function connectNativeTm2(url:string):Promise<Tm2Client>{
 }
 function rawRpcHash(value:unknown){if(typeof value!=="string"||!value)return "";if(/^(?:[0-9a-fA-F]{2})+$/.test(value))return value.toUpperCase();try{return Buffer.from(value,"base64").toString("hex").toUpperCase()}catch{return ""}}
 async function nativeGnoStatus(url:string){
-  const id=Math.floor(100_000_000_000+Math.random()*900_000_000_000),response=await nativeTm2Execute(url,{jsonrpc:"2.0",id,method:"status",params:{heightGte:"0"}}),result=response.result as {node_info?:{network?:unknown};sync_info?:{latest_block_height?:unknown;latest_block_hash?:unknown;catching_up?:unknown}};
+  const endpoint=nativeTm2Url(url);endpoint.pathname=`${endpoint.pathname.replace(/\/$/,"")}/status`;endpoint.searchParams.set("heightGte","0");
+  let httpResponse:Response;
+  try{httpResponse=await fetch(endpoint,{method:"GET",headers:{accept:"application/json"},redirect:"error",signal:AbortSignal.timeout(10_000)})}catch{throw new Error("gno_rpc_unavailable")}
+  const response=await nativeTm2Response(httpResponse,""),result=response.result as {node_info?:{network?:unknown};sync_info?:{latest_block_height?:unknown;latest_block_hash?:unknown;catching_up?:unknown}};
   if(!result?.node_info||typeof result.node_info.network!=="string"||!result.sync_info||!/^\d+$/.test(String(result.sync_info.latest_block_height??""))||typeof result.sync_info.catching_up!=="boolean")throw new Error("gno_rpc_unavailable");
   return {node_info:{network:result.node_info.network},sync_info:{latest_block_height:String(result.sync_info.latest_block_height),latest_block_hash:rawRpcHash(result.sync_info.latest_block_hash),catching_up:result.sync_info.catching_up}};
 }

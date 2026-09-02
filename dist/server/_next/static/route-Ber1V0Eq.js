@@ -1,1 +1,0 @@
-import{n as e}from"./server-Cww078JS.js";import{a as t,i as n,r,t as i}from"./multichain-HYC_2E2D.js";var a=`force-dynamic`;async function o(){return e.json({x402Version:2,sdkVersion:i,rails:t(),mainnets:n(),facilitator:{origin:r(),publicTestnetOnly:!process.env.X402_FACILITATOR_URL}},{headers:{"cache-control":`no-store`}})}export{o as GET,a as dynamic};
