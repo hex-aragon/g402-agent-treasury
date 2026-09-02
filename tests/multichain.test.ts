@@ -456,6 +456,42 @@ test("registry exposes five rails and requires two independent gates per EVM/Sol
   }
 });
 
+test("Solana challenge treats a JSON-RPC error as unavailable infrastructure", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalRecipient = process.env.X402_SOLANA_PAY_TO;
+  const recipient = await createKeyPairSignerFromPrivateKeyBytes(
+    new Uint8Array(32).fill(31),
+  );
+  process.env.X402_SOLANA_PAY_TO = recipient.address;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        error: { code: -32000, message: "provider rejected request" },
+      }),
+      { headers: { "content-type": "application/json" } },
+    );
+  try {
+    await assert.rejects(
+      () =>
+        createProtocolChallenge(
+          {
+            railId: "svm-solana-devnet",
+            resource,
+            walletAddress: recipient.address,
+          },
+          { facilitator: new MockFacilitator() },
+        ),
+      /solana_rpc_unavailable/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalRecipient === undefined) delete process.env.X402_SOLANA_PAY_TO;
+    else process.env.X402_SOLANA_PAY_TO = originalRecipient;
+  }
+});
+
 test("Ethereum mainnet dual gates enable challenge, signature, settlement, and known-tx reconciliation", async () => {
   const recipient = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
   const transaction = `0x${"6".repeat(64)}` as `0x${string}`;

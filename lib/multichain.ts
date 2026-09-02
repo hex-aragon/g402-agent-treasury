@@ -62,7 +62,7 @@ export const SOLANA_MAINNET_USDC =
 export const BASE_SEPOLIA_DEMO_RECIPIENT =
   "0x7e758891b2965eb82e4a121f66d5f6f3d6a2dec6" as const;
 export const SOLANA_DEVNET_DEMO_RECIPIENT =
-  "6eGhy5LsBSQ8X2B3PfLYYuTSA7CtNeSnWof6WaQBW6DK" as const;
+  "CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5" as const;
 
 export type RailId =
   | "gno-pearl"
@@ -429,7 +429,9 @@ async function ensureSolanaRecipientAta(
   if (!response.ok) throw new Error("solana_rpc_unavailable");
   const body = (await response.json()) as {
     result?: { value?: { owner?: string } | null };
+    error?: unknown;
   };
+  if (body.error || !body.result) throw new Error("solana_rpc_unavailable");
   if (body.result?.value?.owner !== SOLANA_TOKEN_PROGRAM)
     throw new Error("solana_recipient_ata_required");
 }
