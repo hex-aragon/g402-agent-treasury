@@ -11,9 +11,10 @@ export async function POST(req: NextRequest) {
       headers: { "cache-control": "no-store" },
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid_request";
     return safeError(
-      error instanceof Error ? error.message : "invalid_request",
-      400,
+      message,
+      /facilitator|solana_rpc|recipient_ata/.test(message) ? 503 : 400,
     );
   }
 }

@@ -102,6 +102,19 @@ const SOLANA_TOKEN_PROGRAM = address(
 const SOLANA_ASSOCIATED_TOKEN_PROGRAM = address(
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
 );
+const SOLANA_DEVNET_PUBLIC_RPCS = [
+  "https://api.devnet.solana.com",
+  "https://solana-devnet.api.onfinality.io/public",
+] as const;
+const SOLANA_RPC_CACHE_TTL_MS = 5 * 60_000;
+const SOLANA_ATA_CACHE_TTL_MS = 25_000;
+const SOLANA_RPC_ATTEMPT_TIMEOUT_MS = 7_000;
+const SOLANA_RPC_TOTAL_TIMEOUT_MS = 18_000;
+const SOLANA_MAX_RPC_URLS = 3;
+const verifiedSolanaRpcs = new Map<string, number>();
+const verifiedSolanaRecipientAtas = new Map<string, number>();
+const pendingSolanaRpcChecks = new Map<string, Promise<void>>();
+const pendingSolanaAtaChecks = new Map<string, Promise<void>>();
 const NetworkSchema = z
   .string()
   .regex(/^(gno|eip155|solana):[A-Za-z0-9-]{1,80}$/) as z.ZodType<Network>;
@@ -386,11 +399,7 @@ export function railForRequirements(
   return rail;
 }
 
-function solanaRpcUrl(rail: RailCapability): string {
-  const raw = rail.mainnet
-    ? process.env.SOLANA_MAINNET_RPC_URL
-    : process.env.SOLANA_DEVNET_RPC_URL || "https://api.devnet.solana.com";
-  if (!raw) throw new Error("solana_rpc_required");
+function parseSolanaRpcUrl(raw: string): string {
   const parsed = new URL(raw);
   if (
     parsed.protocol !== "https:" ||
@@ -402,10 +411,124 @@ function solanaRpcUrl(rail: RailCapability): string {
   return parsed.toString();
 }
 
-async function ensureSolanaRecipientAta(
+function solanaRpcUrls(rail: RailCapability): string[] {
+  if (rail.mainnet) {
+    const raw = process.env.SOLANA_MAINNET_RPC_URL;
+    if (!raw) throw new Error("solana_rpc_required");
+    return [parseSolanaRpcUrl(raw)];
+  }
+  const configuredList = process.env.SOLANA_DEVNET_RPC_URLS?.trim();
+  const configuredSingle = process.env.SOLANA_DEVNET_RPC_URL?.trim();
+  const rawUrls = configuredList
+    ? configuredList.split(",").map((value) => value.trim())
+    : configuredSingle
+      ? [configuredSingle]
+      : [...SOLANA_DEVNET_PUBLIC_RPCS];
+  const urls = [
+    ...new Set(rawUrls.filter(Boolean).map(parseSolanaRpcUrl)),
+  ];
+  if (!urls.length) throw new Error("solana_rpc_required");
+  if (urls.length > SOLANA_MAX_RPC_URLS)
+    throw new Error("too_many_solana_rpc_urls");
+  return urls;
+}
+
+function pruneExpiryCache(cache: Map<string, number>, now = Date.now()): void {
+  for (const [key, expiresAt] of cache) {
+    if (expiresAt <= now) cache.delete(key);
+  }
+  while (cache.size >= 64) cache.delete(cache.keys().next().value!);
+}
+
+async function solanaRpcRequest(
+  rpcUrl: string,
+  method: string,
+  params: unknown[] = [],
+): Promise<unknown> {
+  const id = crypto.randomUUID();
+  let response: Response;
+  try {
+    response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      redirect: "error",
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    throw new Error("solana_rpc_unavailable");
+  }
+  if (!response.ok) throw new Error("solana_rpc_unavailable");
+  let body: {
+    jsonrpc?: unknown;
+    id?: unknown;
+    result?: unknown;
+    error?: unknown;
+  };
+  try {
+    body = (await response.json()) as typeof body;
+  } catch {
+    throw new Error("solana_rpc_unavailable");
+  }
+  if (
+    body.jsonrpc !== "2.0" ||
+    body.id !== id ||
+    body.error ||
+    !("result" in body)
+  )
+    throw new Error("solana_rpc_unavailable");
+  return body.result;
+}
+
+async function assertSolanaRpcForRail(
+  rail: RailCapability,
+  rpcUrl: string,
+): Promise<void> {
+  const key = `${rail.network}:${rpcUrl}`;
+  const now = Date.now();
+  pruneExpiryCache(verifiedSolanaRpcs, now);
+  if ((verifiedSolanaRpcs.get(key) || 0) > now) return;
+  const existing = pendingSolanaRpcChecks.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    const result = await solanaRpcRequest(rpcUrl, "getGenesisHash");
+    if (typeof result !== "string")
+      throw new Error("solana_rpc_unavailable");
+    if (result !== rail.network.slice("solana:".length))
+      throw new Error("solana_rpc_wrong_cluster");
+    pruneExpiryCache(verifiedSolanaRpcs);
+    verifiedSolanaRpcs.set(key, Date.now() + SOLANA_RPC_CACHE_TTL_MS);
+  })();
+  pendingSolanaRpcChecks.set(key, pending);
+  try {
+    await pending;
+  } finally {
+    if (pendingSolanaRpcChecks.get(key) === pending)
+      pendingSolanaRpcChecks.delete(key);
+  }
+}
+
+function sameBytes(actual: ArrayLike<number>, expected: ArrayLike<number>): boolean {
+  if (actual.length !== expected.length) return false;
+  for (let index = 0; index < actual.length; index += 1) {
+    if (actual[index] !== expected[index]) return false;
+  }
+  return true;
+}
+
+async function ensureSolanaRecipientAtaAtRpc(
   rail: RailCapability,
   recipient: string,
+  rpcUrl: string,
+  forceCheck = false,
 ): Promise<void> {
+  const cacheKey = `${rail.network}:${rail.asset}:${recipient}:${rpcUrl}`;
+  const now = Date.now();
+  pruneExpiryCache(verifiedSolanaRecipientAtas, now);
+  if (!forceCheck && (verifiedSolanaRecipientAtas.get(cacheKey) || 0) > now)
+    return;
+  const existing = pendingSolanaAtaChecks.get(cacheKey);
+  if (existing) return existing;
   const encoder = getAddressEncoder();
   const [ata] = await getProgramDerivedAddress({
     programAddress: SOLANA_ASSOCIATED_TOKEN_PROGRAM,
@@ -415,25 +538,153 @@ async function ensureSolanaRecipientAta(
       encoder.encode(address(rail.asset)),
     ],
   });
-  const response = await fetch(solanaRpcUrl(rail), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: crypto.randomUUID(),
-      method: "getAccountInfo",
-      params: [ata, { encoding: "base64", commitment: "confirmed" }],
-    }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error("solana_rpc_unavailable");
-  const body = (await response.json()) as {
-    result?: { value?: { owner?: string } | null };
-    error?: unknown;
-  };
-  if (body.error || !body.result) throw new Error("solana_rpc_unavailable");
-  if (body.result?.value?.owner !== SOLANA_TOKEN_PROGRAM)
-    throw new Error("solana_recipient_ata_required");
+  const pending = (async () => {
+    const result = await solanaRpcRequest(rpcUrl, "getAccountInfo", [
+      ata,
+      { encoding: "base64", commitment: "finalized" },
+    ]);
+    if (!result || typeof result !== "object" || !("value" in result))
+      throw new Error("solana_rpc_unavailable");
+    const value = (result as { value: unknown }).value;
+    if (value === null) throw new Error("solana_recipient_ata_required");
+    if (!value || typeof value !== "object")
+      throw new Error("solana_rpc_unavailable");
+    const account = value as {
+      owner?: unknown;
+      executable?: unknown;
+      data?: unknown;
+    };
+    if (account.owner !== SOLANA_TOKEN_PROGRAM)
+      throw new Error("solana_recipient_ata_invalid");
+    if (account.executable !== false)
+      throw new Error("solana_recipient_ata_invalid");
+    if (
+      !Array.isArray(account.data) ||
+      account.data.length !== 2 ||
+      typeof account.data[0] !== "string" ||
+      account.data[1] !== "base64"
+    )
+      throw new Error("solana_recipient_ata_invalid");
+    const data = Buffer.from(account.data[0], "base64");
+    if (data.toString("base64") !== account.data[0])
+      throw new Error("solana_rpc_unavailable");
+    if (data.length !== 165)
+      throw new Error("solana_recipient_ata_invalid");
+    const mint = getBase58Encoder().encode(rail.asset);
+    const authority = getBase58Encoder().encode(recipient);
+    const validCOptionTags = [72, 109, 129].every((offset) => {
+      const tag = data.readUInt32LE(offset);
+      return tag === 0 || tag === 1;
+    });
+    if (
+      !sameBytes(data.subarray(0, 32), mint) ||
+      !sameBytes(data.subarray(32, 64), authority) ||
+      data[108] !== 1 ||
+      !validCOptionTags ||
+      data.readUInt32LE(109) !== 0
+    )
+      throw new Error("solana_recipient_ata_invalid");
+    pruneExpiryCache(verifiedSolanaRecipientAtas);
+    verifiedSolanaRecipientAtas.set(
+      cacheKey,
+      Date.now() + SOLANA_ATA_CACHE_TTL_MS,
+    );
+  })();
+  pendingSolanaAtaChecks.set(cacheKey, pending);
+  try {
+    await pending;
+  } finally {
+    if (pendingSolanaAtaChecks.get(cacheKey) === pending)
+      pendingSolanaAtaChecks.delete(cacheKey);
+  }
+}
+
+async function withSolanaTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  if (timeoutMs <= 0) throw new Error("solana_rpc_unavailable");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("solana_rpc_unavailable")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function isSolanaSemanticConstructionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /unsupported network|known token program|feepayer is required|memo exceeds|invalid_solana_transaction/i.test(
+    message,
+  );
+}
+
+async function createSvmUnsignedPaymentPayload(
+  rail: RailCapability,
+  walletAddress: string,
+  requirements: PaymentRequirements,
+  options: { forceAtaCheck?: boolean } = {},
+) {
+  const rpcUrls = solanaRpcUrls(rail);
+  const deadline = Date.now() + SOLANA_RPC_TOTAL_TIMEOUT_MS;
+  let observedMissingAta = false;
+  for (const rpcUrl of rpcUrls) {
+    try {
+      const attemptDeadline = Math.min(
+        deadline,
+        Date.now() + SOLANA_RPC_ATTEMPT_TIMEOUT_MS,
+      );
+      const remaining = () => attemptDeadline - Date.now();
+      const clusterTimeout = remaining();
+      if (clusterTimeout <= 0) throw new Error("solana_rpc_unavailable");
+      await withSolanaTimeout(
+        assertSolanaRpcForRail(rail, rpcUrl),
+        clusterTimeout,
+      );
+      const ataTimeout = remaining();
+      if (ataTimeout <= 0) throw new Error("solana_rpc_unavailable");
+      await withSolanaTimeout(
+        ensureSolanaRecipientAtaAtRpc(
+          rail,
+          requirements.payTo,
+          rpcUrl,
+          options.forceAtaCheck,
+        ),
+        ataTimeout,
+      );
+      const payloadTimeout = remaining();
+      if (payloadTimeout <= 0) throw new Error("solana_rpc_unavailable");
+      const payload = await withSolanaTimeout(
+        new ExactSvmClientScheme(
+          createNoopSigner(address(walletAddress)),
+          { rpcUrl },
+        ).createPaymentPayload(2, requirements),
+        payloadTimeout,
+      );
+      svmMessageHash(payload);
+      return payload;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        message === "solana_rpc_wrong_cluster" ||
+        message === "solana_recipient_ata_invalid" ||
+        isSolanaSemanticConstructionError(error)
+      )
+        throw error;
+      if (message === "solana_recipient_ata_required") {
+        observedMissingAta = true;
+        continue;
+      }
+      if (rail.mainnet) break;
+    }
+  }
+  if (observedMissingAta) throw new Error("solana_recipient_ata_required");
+  throw new Error("solana_rpc_unavailable");
 }
 
 export function validWalletAddress(family: RailFamily, value: string): boolean {
@@ -622,7 +873,6 @@ export async function createProtocolChallenge(
   const rail = railById(input.railId);
   if (!validWalletAddress(rail.family, input.walletAddress))
     throw new Error("invalid_wallet_address");
-  const now = dependencies.now || new Date();
   const method = input.method || "GET";
   const description = input.description || "x402 multichain paid weather data";
   if (rail.family === "gno") {
@@ -664,11 +914,12 @@ export async function createProtocolChallenge(
   const recipient = configuredRecipient(rail);
   const client = dependencies.facilitator || facilitatorClient();
   const facilitatorExtra = await ensureFacilitatorSupport(rail, client);
-  if (rail.family === "svm") await ensureSolanaRecipientAta(rail, recipient);
   const challengeId = crypto.randomUUID().replaceAll("-", "");
   const paymentId = `pay_${crypto.randomUUID().replaceAll("-", "")}`;
   const hash = resourceHash(method, input.resource);
-  const expiresAt = Math.floor(now.getTime() / 1000) + rail.maxTimeoutSeconds;
+  let issuedAt = dependencies.now || new Date();
+  let expiresAt =
+    Math.floor(issuedAt.getTime() / 1000) + rail.maxTimeoutSeconds;
   const extra: Record<string, unknown> =
     rail.family === "evm"
       ? (() => {
@@ -723,11 +974,17 @@ export async function createProtocolChallenge(
   };
   const unsignedPaymentPayload =
     rail.family === "svm"
-      ? await new ExactSvmClientScheme(
-          createNoopSigner(address(input.walletAddress)),
-          { rpcUrl: solanaRpcUrl(rail) },
-        ).createPaymentPayload(2, accepted)
+      ? await createSvmUnsignedPaymentPayload(
+          rail,
+          input.walletAddress,
+          accepted,
+        )
       : undefined;
+  if (rail.family === "svm" && !dependencies.now) {
+    issuedAt = new Date();
+    expiresAt =
+      Math.floor(issuedAt.getTime() / 1000) + rail.maxTimeoutSeconds;
+  }
   await saveChallenge({
     nonce: challengeId,
     resource: input.resource,
@@ -750,7 +1007,7 @@ export async function createProtocolChallenge(
     requirements: accepted,
     resourceInfo,
     expiresAt,
-    createdAt: now.toISOString(),
+    createdAt: issuedAt.toISOString(),
   });
   return {
     challengeId,
@@ -863,18 +1120,24 @@ export async function validateProtocolReview(raw: unknown): Promise<{
   let unsignedPaymentPayload:
     CreatedProtocolChallenge["unsignedPaymentPayload"] | undefined;
   if (rail.family === "svm") {
-    const now = Math.floor(Date.now() / 1000);
-    if (issued.expiresAt - now < 15) throw new Error("challenge_expiring");
-    unsignedPaymentPayload = await new ExactSvmClientScheme(
-      createNoopSigner(address(input.walletAddress)),
-      { rpcUrl: solanaRpcUrl(rail) },
-    ).createPaymentPayload(2, requirements);
+    const startedAt = Math.floor(Date.now() / 1000);
+    if (issued.expiresAt - startedAt < 15)
+      throw new Error("challenge_expiring");
+    unsignedPaymentPayload = await createSvmUnsignedPaymentPayload(
+      rail,
+      input.walletAddress,
+      requirements,
+      { forceAtaCheck: true },
+    );
+    const commitNow = Math.floor(Date.now() / 1000);
+    if (issued.expiresAt - commitNow < 15)
+      throw new Error("challenge_expiring");
     const nextHash = svmMessageHash(unsignedPaymentPayload);
     const replaced = await replaceChallengeUnsignedPayloadHash(
       input.challengeId,
       issued.unsignedPayloadHash!,
       nextHash,
-      now,
+      commitNow,
     );
     if (!replaced) throw new Error("challenge_refresh_conflict");
   }

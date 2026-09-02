@@ -28,6 +28,7 @@ import {
 } from "viem";
 import {
   createKeyPairSignerFromPrivateKeyBytes,
+  getBase58Encoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
   getTransactionEncoder,
@@ -53,6 +54,7 @@ import {
 } from "../lib/multichain.ts";
 import {
   findAuthorizedSettledPayment,
+  findChallenge,
   findPayment,
   savePayment,
 } from "../lib/store.ts";
@@ -63,6 +65,14 @@ const evmAccount = privateKeyToAccount(
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
 );
 const resource = "https://treasury.test/api/demo/multichain-paid-data";
+
+function classicTokenAccountData(mint: string, authority: string): Uint8Array {
+  const data = new Uint8Array(165);
+  data.set(getBase58Encoder().encode(mint), 0);
+  data.set(getBase58Encoder().encode(authority), 32);
+  data[108] = 1;
+  return data;
+}
 
 async function withEnvironment<T>(
   values: Record<string, string>,
@@ -459,19 +469,25 @@ test("registry exposes five rails and requires two independent gates per EVM/Sol
 test("Solana challenge treats a JSON-RPC error as unavailable infrastructure", async () => {
   const originalFetch = globalThis.fetch;
   const originalRecipient = process.env.X402_SOLANA_PAY_TO;
+  const originalRpc = process.env.SOLANA_DEVNET_RPC_URL;
+  const originalRpcList = process.env.SOLANA_DEVNET_RPC_URLS;
   const recipient = await createKeyPairSignerFromPrivateKeyBytes(
     new Uint8Array(32).fill(31),
   );
   process.env.X402_SOLANA_PAY_TO = recipient.address;
-  globalThis.fetch = async () =>
-    new Response(
+  process.env.SOLANA_DEVNET_RPC_URL = "https://rpc-error.test";
+  delete process.env.SOLANA_DEVNET_RPC_URLS;
+  globalThis.fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body)) as { id: unknown };
+    return new Response(
       JSON.stringify({
         jsonrpc: "2.0",
-        id: 1,
+        id: request.id,
         error: { code: -32000, message: "provider rejected request" },
       }),
       { headers: { "content-type": "application/json" } },
     );
+  };
   try {
     await assert.rejects(
       () =>
@@ -489,6 +505,224 @@ test("Solana challenge treats a JSON-RPC error as unavailable infrastructure", a
     globalThis.fetch = originalFetch;
     if (originalRecipient === undefined) delete process.env.X402_SOLANA_PAY_TO;
     else process.env.X402_SOLANA_PAY_TO = originalRecipient;
+    if (originalRpc === undefined) delete process.env.SOLANA_DEVNET_RPC_URL;
+    else process.env.SOLANA_DEVNET_RPC_URL = originalRpc;
+    if (originalRpcList === undefined)
+      delete process.env.SOLANA_DEVNET_RPC_URLS;
+    else process.env.SOLANA_DEVNET_RPC_URLS = originalRpcList;
+  }
+});
+
+test("Solana challenge retries the complete construction on the next Devnet RPC", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalRecipient = process.env.X402_SOLANA_PAY_TO;
+  const originalRpc = process.env.SOLANA_DEVNET_RPC_URL;
+  const originalRpcList = process.env.SOLANA_DEVNET_RPC_URLS;
+  const payer = await createKeyPairSignerFromPrivateKeyBytes(
+    new Uint8Array(32).fill(32),
+  );
+  const recipient = await createKeyPairSignerFromPrivateKeyBytes(
+    new Uint8Array(32).fill(33),
+  );
+  const feePayer = await createKeyPairSignerFromPrivateKeyBytes(
+    new Uint8Array(32).fill(34),
+  );
+  const mint = new Uint8Array(82);
+  mint[44] = 6;
+  mint[45] = 1;
+  process.env.X402_SOLANA_PAY_TO = recipient.address;
+  delete process.env.SOLANA_DEVNET_RPC_URL;
+  process.env.SOLANA_DEVNET_RPC_URLS =
+    "https://unavailable-rpc.test,https://devnet-rpc.test";
+  const called: Array<{ url: string; method: string }> = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const request = JSON.parse(String(init?.body)) as {
+      id: unknown;
+      method: string;
+      params?: unknown[];
+    };
+    called.push({ url, method: request.method });
+    if (url === "https://unavailable-rpc.test/")
+      return new Response("rate limited", { status: 429 });
+    const tokenAccount = classicTokenAccountData(
+      SOLANA_DEVNET_USDC,
+      recipient.address,
+    );
+    const result =
+      request.method === "getGenesisHash"
+        ? SOLANA_DEVNET_NETWORK.split(":", 2)[1]
+        : request.method === "getAccountInfo"
+          ? {
+              context: { slot: 1 },
+              value: {
+                data: [
+                  Buffer.from(
+                    request.params?.[0] === SOLANA_DEVNET_USDC
+                      ? mint
+                      : tokenAccount,
+                  ).toString("base64"),
+                  "base64",
+                ],
+                executable: false,
+                lamports: 1,
+                owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                rentEpoch: 0,
+                space:
+                  request.params?.[0] === SOLANA_DEVNET_USDC ? 82 : 165,
+              },
+            }
+          : {
+              context: { slot: 1 },
+              value: {
+                blockhash: payer.address,
+                lastValidBlockHeight: 1_000,
+              },
+            };
+    return new Response(
+      JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
+    );
+  };
+  try {
+    const challenge = await createProtocolChallenge(
+      {
+        railId: "svm-solana-devnet",
+        resource,
+        walletAddress: payer.address,
+      },
+      {
+        facilitator: new SvmFacilitator(feePayer.address, payer.address),
+      },
+    );
+    assert.ok(challenge.unsignedPaymentPayload?.payload.transaction);
+    assert.deepEqual(called[0], {
+      url: "https://unavailable-rpc.test/",
+      method: "getGenesisHash",
+    });
+    assert.deepEqual(
+      called
+        .filter((entry) => entry.url === "https://devnet-rpc.test/")
+        .map((entry) => entry.method),
+      ["getGenesisHash", "getAccountInfo", "getAccountInfo", "getLatestBlockhash"],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalRecipient === undefined) delete process.env.X402_SOLANA_PAY_TO;
+    else process.env.X402_SOLANA_PAY_TO = originalRecipient;
+    if (originalRpc === undefined) delete process.env.SOLANA_DEVNET_RPC_URL;
+    else process.env.SOLANA_DEVNET_RPC_URL = originalRpc;
+    if (originalRpcList === undefined)
+      delete process.env.SOLANA_DEVNET_RPC_URLS;
+    else process.env.SOLANA_DEVNET_RPC_URLS = originalRpcList;
+  }
+});
+
+test("Solana challenge fails closed on a wrong-cluster RPC", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalRecipient = process.env.X402_SOLANA_PAY_TO;
+  const originalRpc = process.env.SOLANA_DEVNET_RPC_URL;
+  const originalRpcList = process.env.SOLANA_DEVNET_RPC_URLS;
+  const recipient = await createKeyPairSignerFromPrivateKeyBytes(
+    new Uint8Array(32).fill(35),
+  );
+  process.env.X402_SOLANA_PAY_TO = recipient.address;
+  delete process.env.SOLANA_DEVNET_RPC_URL;
+  process.env.SOLANA_DEVNET_RPC_URLS =
+    "https://wrong-cluster-only.test,https://must-not-run.test";
+  const called: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    called.push(String(input));
+    const request = JSON.parse(String(init?.body)) as { id: unknown };
+    return new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: request.id,
+        result: SOLANA_MAINNET.split(":", 2)[1],
+      }),
+    );
+  };
+  try {
+    await assert.rejects(
+      () =>
+        createProtocolChallenge(
+          {
+            railId: "svm-solana-devnet",
+            resource,
+            walletAddress: recipient.address,
+          },
+          { facilitator: new MockFacilitator() },
+        ),
+      /solana_rpc_wrong_cluster/,
+    );
+    assert.deepEqual(called, ["https://wrong-cluster-only.test/"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalRecipient === undefined) delete process.env.X402_SOLANA_PAY_TO;
+    else process.env.X402_SOLANA_PAY_TO = originalRecipient;
+    if (originalRpc === undefined) delete process.env.SOLANA_DEVNET_RPC_URL;
+    else process.env.SOLANA_DEVNET_RPC_URL = originalRpc;
+    if (originalRpcList === undefined)
+      delete process.env.SOLANA_DEVNET_RPC_URLS;
+    else process.env.SOLANA_DEVNET_RPC_URLS = originalRpcList;
+  }
+});
+
+test("Solana challenge rejects a malformed recipient token account", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalRecipient = process.env.X402_SOLANA_PAY_TO;
+  const originalRpc = process.env.SOLANA_DEVNET_RPC_URL;
+  const originalRpcList = process.env.SOLANA_DEVNET_RPC_URLS;
+  const recipient = await createKeyPairSignerFromPrivateKeyBytes(
+    new Uint8Array(32).fill(36),
+  );
+  process.env.X402_SOLANA_PAY_TO = recipient.address;
+  process.env.SOLANA_DEVNET_RPC_URL = "https://invalid-ata.test";
+  delete process.env.SOLANA_DEVNET_RPC_URLS;
+  globalThis.fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body)) as {
+      id: unknown;
+      method: string;
+    };
+    const result =
+      request.method === "getGenesisHash"
+        ? SOLANA_DEVNET_NETWORK.split(":", 2)[1]
+        : {
+            context: { slot: 1 },
+            value: {
+              data: [Buffer.alloc(82).toString("base64"), "base64"],
+              executable: false,
+              lamports: 1,
+              owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+              rentEpoch: 0,
+              space: 82,
+            },
+          };
+    return new Response(
+      JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
+    );
+  };
+  try {
+    await assert.rejects(
+      () =>
+        createProtocolChallenge(
+          {
+            railId: "svm-solana-devnet",
+            resource,
+            walletAddress: recipient.address,
+          },
+          { facilitator: new MockFacilitator() },
+        ),
+      /solana_recipient_ata_invalid/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalRecipient === undefined) delete process.env.X402_SOLANA_PAY_TO;
+    else process.env.X402_SOLANA_PAY_TO = originalRecipient;
+    if (originalRpc === undefined) delete process.env.SOLANA_DEVNET_RPC_URL;
+    else process.env.SOLANA_DEVNET_RPC_URL = originalRpc;
+    if (originalRpcList === undefined)
+      delete process.env.SOLANA_DEVNET_RPC_URLS;
+    else process.env.SOLANA_DEVNET_RPC_URLS = originalRpcList;
   }
 });
 
@@ -652,10 +886,18 @@ test("Solana mainnet dual gates enable challenge, signature, settlement, and kno
       const mint = new Uint8Array(82);
       mint[44] = 6;
       mint[45] = 1;
+      const tokenAccount = classicTokenAccountData(
+        SOLANA_MAINNET_USDC,
+        recipient.address,
+      );
       let blockhashCall = 0;
       globalThis.fetch = async (url, init) => {
         assert.equal(String(url), "https://solana-mainnet-rpc.test/");
-        const rpc = JSON.parse(String(init?.body)) as { method: string };
+        const rpc = JSON.parse(String(init?.body)) as {
+          id: unknown;
+          method: string;
+          params?: unknown[];
+        };
         const result =
           rpc.method === "getGenesisHash"
             ? SOLANA_MAINNET.split(":", 2)[1]
@@ -663,12 +905,20 @@ test("Solana mainnet dual gates enable challenge, signature, settlement, and kno
               ? {
                   context: { slot: 1 },
                   value: {
-                    data: [Buffer.from(mint).toString("base64"), "base64"],
+                    data: [
+                      Buffer.from(
+                        rpc.params?.[0] === SOLANA_MAINNET_USDC
+                          ? mint
+                          : tokenAccount,
+                      ).toString("base64"),
+                      "base64",
+                    ],
                     executable: false,
                     lamports: 1,
                     owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
                     rentEpoch: 0,
-                    space: 82,
+                    space:
+                      rpc.params?.[0] === SOLANA_MAINNET_USDC ? 82 : 165,
                   },
                 }
               : rpc.method === "getLatestBlockhash"
@@ -699,7 +949,9 @@ test("Solana mainnet dual gates enable challenge, signature, settlement, and kno
                         meta: { err: null },
                       }
                     : { blockhash: feePayer.address };
-        return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }));
+        return new Response(
+          JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }),
+        );
       };
       try {
         assert.equal(railById("svm-solana-mainnet").status, "sdk_ready");
@@ -981,6 +1233,8 @@ test("official SVM client signs a sponsored v0 classic SPL transaction with mock
 test("Solana review refreshes the blockhash and only the refreshed signed message settles", async () => {
   const originalFetch = globalThis.fetch;
   const originalRecipient = process.env.X402_SOLANA_PAY_TO;
+  const originalRpc = process.env.SOLANA_DEVNET_RPC_URL;
+  const originalRpcList = process.env.SOLANA_DEVNET_RPC_URLS;
   const payer = await createKeyPairSignerFromPrivateKeyBytes(
     new Uint8Array(32).fill(17),
   );
@@ -993,21 +1247,41 @@ test("Solana review refreshes the blockhash and only the refreshed signed messag
   const mint = new Uint8Array(82);
   mint[44] = 6;
   mint[45] = 1;
+  const tokenAccount = classicTokenAccountData(
+    SOLANA_DEVNET_USDC,
+    recipient.address,
+  );
   let blockhashCall = 0;
   process.env.X402_SOLANA_PAY_TO = recipient.address;
+  process.env.SOLANA_DEVNET_RPC_URL = "https://rpc.test";
+  delete process.env.SOLANA_DEVNET_RPC_URLS;
   globalThis.fetch = async (_input, init) => {
-    const request = JSON.parse(String(init?.body)) as { method: string };
+    const request = JSON.parse(String(init?.body)) as {
+      id: unknown;
+      method: string;
+      params?: unknown[];
+    };
     const result =
-      request.method === "getAccountInfo"
+      request.method === "getGenesisHash"
+        ? SOLANA_DEVNET_NETWORK.split(":", 2)[1]
+        : request.method === "getAccountInfo"
         ? {
             context: { slot: 1 },
             value: {
-              data: [Buffer.from(mint).toString("base64"), "base64"],
+              data: [
+                Buffer.from(
+                  request.params?.[0] === SOLANA_DEVNET_USDC
+                    ? mint
+                    : tokenAccount,
+                ).toString("base64"),
+                "base64",
+              ],
               executable: false,
               lamports: 1,
               owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
               rentEpoch: 0,
-              space: 82,
+              space:
+                request.params?.[0] === SOLANA_DEVNET_USDC ? 82 : 165,
             },
           }
         : {
@@ -1018,7 +1292,9 @@ test("Solana review refreshes the blockhash and only the refreshed signed messag
               lastValidBlockHeight: 1000 + blockhashCall,
             },
           };
-    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }));
+    return new Response(
+      JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
+    );
   };
   try {
     const facilitator = new SvmFacilitator(feePayer.address, payer.address);
@@ -1089,6 +1365,124 @@ test("Solana review refreshes the blockhash and only the refreshed signed messag
     globalThis.fetch = originalFetch;
     if (originalRecipient === undefined) delete process.env.X402_SOLANA_PAY_TO;
     else process.env.X402_SOLANA_PAY_TO = originalRecipient;
+    if (originalRpc === undefined) delete process.env.SOLANA_DEVNET_RPC_URL;
+    else process.env.SOLANA_DEVNET_RPC_URL = originalRpc;
+    if (originalRpcList === undefined)
+      delete process.env.SOLANA_DEVNET_RPC_URLS;
+    else process.env.SOLANA_DEVNET_RPC_URLS = originalRpcList;
+  }
+});
+
+test("Solana review never replaces a payload after RPC work consumes the signing window", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  const originalRecipient = process.env.X402_SOLANA_PAY_TO;
+  const originalRpc = process.env.SOLANA_DEVNET_RPC_URL;
+  const originalRpcList = process.env.SOLANA_DEVNET_RPC_URLS;
+  const payer = await createKeyPairSignerFromPrivateKeyBytes(
+    new Uint8Array(32).fill(37),
+  );
+  const recipient = await createKeyPairSignerFromPrivateKeyBytes(
+    new Uint8Array(32).fill(38),
+  );
+  const feePayer = await createKeyPairSignerFromPrivateKeyBytes(
+    new Uint8Array(32).fill(39),
+  );
+  const mint = new Uint8Array(82);
+  mint[44] = 6;
+  mint[45] = 1;
+  const tokenAccount = classicTokenAccountData(
+    SOLANA_DEVNET_USDC,
+    recipient.address,
+  );
+  const issuedAtMs = originalDateNow();
+  let observedNow = issuedAtMs;
+  let blockhashCall = 0;
+  process.env.X402_SOLANA_PAY_TO = recipient.address;
+  process.env.SOLANA_DEVNET_RPC_URL = "https://expiry-rpc.test";
+  delete process.env.SOLANA_DEVNET_RPC_URLS;
+  Date.now = () => observedNow;
+  globalThis.fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body)) as {
+      id: unknown;
+      method: string;
+      params?: unknown[];
+    };
+    if (request.method === "getLatestBlockhash" && blockhashCall++ === 1)
+      observedNow = issuedAtMs + 50_000;
+    const result =
+      request.method === "getGenesisHash"
+        ? SOLANA_DEVNET_NETWORK.split(":", 2)[1]
+        : request.method === "getAccountInfo"
+          ? {
+              context: { slot: 1 },
+              value: {
+                data: [
+                  Buffer.from(
+                    request.params?.[0] === SOLANA_DEVNET_USDC
+                      ? mint
+                      : tokenAccount,
+                  ).toString("base64"),
+                  "base64",
+                ],
+                executable: false,
+                lamports: 1,
+                owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                rentEpoch: 0,
+                space:
+                  request.params?.[0] === SOLANA_DEVNET_USDC ? 82 : 165,
+              },
+            }
+          : {
+              context: { slot: 1 },
+              value: {
+                blockhash:
+                  blockhashCall === 1 ? payer.address : recipient.address,
+                lastValidBlockHeight: 1_000 + blockhashCall,
+              },
+            };
+    return new Response(
+      JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
+    );
+  };
+  try {
+    const challenge = await createProtocolChallenge(
+      {
+        railId: "svm-solana-devnet",
+        resource,
+        walletAddress: payer.address,
+      },
+      {
+        facilitator: new SvmFacilitator(feePayer.address, payer.address),
+        now: new Date(issuedAtMs),
+      },
+    );
+    const initialHash = (await findChallenge(challenge.challengeId))
+      ?.unsignedPayloadHash;
+    await assert.rejects(
+      () =>
+        validateProtocolReview({
+          challengeId: challenge.challengeId,
+          walletAddress: payer.address,
+          paymentRequired: challenge.paymentRequired,
+          unsignedPaymentPayload: challenge.unsignedPaymentPayload,
+        }),
+      /challenge_expiring/,
+    );
+    assert.equal(
+      (await findChallenge(challenge.challengeId))?.unsignedPayloadHash,
+      initialHash,
+    );
+  } finally {
+    Date.now = originalDateNow;
+    globalThis.fetch = originalFetch;
+    if (originalRecipient === undefined) delete process.env.X402_SOLANA_PAY_TO;
+    else process.env.X402_SOLANA_PAY_TO = originalRecipient;
+    if (originalRpc === undefined) delete process.env.SOLANA_DEVNET_RPC_URL;
+    else process.env.SOLANA_DEVNET_RPC_URL = originalRpc;
+    if (originalRpcList === undefined)
+      delete process.env.SOLANA_DEVNET_RPC_URLS;
+    else process.env.SOLANA_DEVNET_RPC_URLS = originalRpcList;
   }
 });
 

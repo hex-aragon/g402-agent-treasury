@@ -349,38 +349,50 @@ export async function replaceChallengeUnsignedPayloadHash(
   challengeId: string,
   expectedHash: string,
   nextHash: string,
-  now = Math.floor(Date.now() / 1000),
+  now?: number,
 ): Promise<boolean> {
   const issued = await findChallenge(challengeId);
+  const db = await getD1();
+  const effectiveNow = Math.max(
+    now ?? 0,
+    Math.floor(Date.now() / 1000),
+  );
   if (
     !issued ||
     issued.consumedBy ||
-    issued.expiresAt < now ||
+    issued.expiresAt < effectiveNow ||
     issued.unsignedPayloadHash !== expectedHash
   )
     return false;
   const extra = JSON.stringify(
     challengeExtra({ ...issued, unsignedPayloadHash: nextHash }),
   );
-  const db = await getD1();
   if (db) {
     const result = await db
       .prepare(
         `update payment_challenges set extra_json=? where nonce=? and consumed_by is null and expires_at>=? and json_extract(extra_json,'$.unsignedPayloadHash')=?`,
       )
-      .bind(extra, challengeId, now, expectedHash)
+      .bind(extra, challengeId, effectiveNow, expectedHash)
       .run();
     return (result.meta.changes || 0) === 1;
   }
   if (!process.env.DATABASE_URL) {
+    const current = memoryChallenges.get(challengeId);
+    if (
+      !current ||
+      current.consumedBy ||
+      current.expiresAt < effectiveNow ||
+      current.unsignedPayloadHash !== expectedHash
+    )
+      return false;
     memoryChallenges.set(challengeId, {
-      ...issued,
+      ...current,
       unsignedPayloadHash: nextHash,
     });
     return true;
   }
   const sql = neon(process.env.DATABASE_URL);
-  const rows = await sql`update payment_challenges set extra=${extra}::jsonb where nonce=${challengeId} and consumed_by is null and expires_at>=${now} and extra->>'unsignedPayloadHash'=${expectedHash} returning nonce`;
+  const rows = await sql`update payment_challenges set extra=${extra}::jsonb where nonce=${challengeId} and consumed_by is null and expires_at>=${effectiveNow} and extra->>'unsignedPayloadHash'=${expectedHash} returning nonce`;
   return rows.length === 1;
 }
 export async function findPayment(

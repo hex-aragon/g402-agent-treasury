@@ -24,7 +24,8 @@ X402_EVM_PAY_TO=
 BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
 
 # Solana Devnet transaction construction and recipient
-SOLANA_DEVNET_RPC_URL=https://api.devnet.solana.com
+SOLANA_DEVNET_RPC_URL=
+SOLANA_DEVNET_RPC_URLS=https://api.devnet.solana.com,https://solana-devnet.api.onfinality.io/public
 X402_SOLANA_PAY_TO=
 
 # Read-only reconciliation timeout for known transaction hashes
@@ -44,7 +45,7 @@ GNO_DENOM=ugnot
 
 For a merchant Gno deployment, set `G402_SELF_TEST_MODE=false` and provide a verified `G402_MERCHANT_ADDRESS`. Do not enable `G402_PAYMENT_MODE=realm` until `contracts/gno/g402pay` has been deployed, its package path verified, and `G402_CONTRACT_PATH` configured.
 
-For Solana, provision and verify the recipient's associated token account for the exact configured USDC mint before a live settlement. Address syntax alone is insufficient operational readiness.
+For Solana, provision and verify the recipient's associated token account for the exact configured USDC mint before a live settlement. Address syntax alone is insufficient operational readiness. For each RPC candidate, the app treats genesis validation, exact ATA validation, official x402 payload construction, and local transaction decoding as one attempt; results from different RPCs are never combined. Successful cluster checks are cached for five minutes and exact ATA checks for 25 seconds, with review forcing a fresh ATA read. Set `SOLANA_DEVNET_RPC_URLS` to an ordered list of at most three endpoints when shared Devnet infrastructure needs failover; an explicitly configured single `SOLANA_DEVNET_RPC_URL` is never expanded to third-party fallbacks, and mainnet always uses exactly one configured RPC.
 
 ## Facilitator configuration
 
