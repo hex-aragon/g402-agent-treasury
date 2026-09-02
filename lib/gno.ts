@@ -38,7 +38,7 @@ export async function connectNativeTm2(url:string):Promise<Tm2Client>{
 }
 function rawRpcHash(value:unknown){if(typeof value!=="string"||!value)return "";if(/^(?:[0-9a-fA-F]{2})+$/.test(value))return value.toUpperCase();try{return Buffer.from(value,"base64").toString("hex").toUpperCase()}catch{return ""}}
 async function nativeGnoStatus(url:string){
-  const id=crypto.randomUUID(),response=await nativeTm2Execute(url,{jsonrpc:"2.0",id,method:"status",params:{}}),result=response.result as {node_info?:{network?:unknown};sync_info?:{latest_block_height?:unknown;latest_block_hash?:unknown;catching_up?:unknown}};
+  const id=Math.floor(100_000_000_000+Math.random()*900_000_000_000),response=await nativeTm2Execute(url,{jsonrpc:"2.0",id,method:"status",params:{}}),result=response.result as {node_info?:{network?:unknown};sync_info?:{latest_block_height?:unknown;latest_block_hash?:unknown;catching_up?:unknown}};
   if(!result?.node_info||typeof result.node_info.network!=="string"||!result.sync_info||!/^\d+$/.test(String(result.sync_info.latest_block_height??""))||typeof result.sync_info.catching_up!=="boolean")throw new Error("gno_rpc_unavailable");
   return {node_info:{network:result.node_info.network},sync_info:{latest_block_height:String(result.sync_info.latest_block_height),latest_block_hash:rawRpcHash(result.sync_info.latest_block_hash),catching_up:result.sync_info.catching_up}};
 }

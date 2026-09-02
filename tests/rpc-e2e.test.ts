@@ -15,6 +15,7 @@ test("Pearl status uses the runtime native fetch transport",async()=>{
     assert.equal(String(input),"https://rpc.test/");
     const request=JSON.parse(String(init?.body)) as {id:unknown;method:string};
     assert.equal(request.method,"status");
+    assert.equal(typeof request.id,"number");
     return new Response(JSON.stringify({jsonrpc:"2.0",id:request.id,result:{node_info:{net_address:"tcp://0.0.0.0:26656",network:"pearl-1",software:"gnoland",version:"0.0.0",channels:"",moniker:"test",other:{},version_set:[]},sync_info:{latest_block_hash:"AQ==",latest_app_hash:"Ag==",latest_block_time:"2026-09-02T00:00:00Z",latest_block_height:"42",catching_up:false},validator_info:{address:validatorAddress,pub_key:{"@type":"/tm.PubKeyEd25519",value:validatorKey.toString("base64")},voting_power:"1"}}}),{headers:{"content-type":"application/json"}});
   };
   try{assert.deepEqual(await new GnoRpcClient("https://rpc.test").status(),{node_info:{network:"pearl-1"},sync_info:{latest_block_height:"42",latest_block_hash:"01",catching_up:false}})}finally{globalThis.fetch=originalFetch}
