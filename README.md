@@ -1,6 +1,12 @@
-# g402 Facilitator + Scan
+# g402 Agent Treasury — WebMCP + GnoLand
 
-An actually runnable x402 facilitator and persistent chain scan for the Gno.land **Pearl testnet**. The active hosted product verifies Adena `SignTx` transactions, atomically claims challenges and nonces in Cloudflare D1, broadcasts exact WUGNOT transfers through the official TM2 RPC client, unlocks a sample paid API, and indexes canonical blocks and g402 receipts. Gno mainnet remains locked.
+An agent-native payment desk and runnable x402 facilitator for the Gno.land **Pearl testnet**. WebMCP lets an AI agent inspect the live gateway, search canonical activity, prepare tightly bounded payment terms, move the shared UI to human review, and verify the final receipt. Adena keeps the signing decision with the person. Gno mainnet remains locked.
+
+**Live app:** https://x402-agent-gateways.gentle-berry-8248.chatgpt.site
+
+**WebMCP workspace:** `/webmcp`
+
+The active hosted product verifies Adena `SignTx` transactions, atomically claims challenges and nonces in Cloudflare D1, broadcasts exact WUGNOT transfers through the official TM2 RPC client, unlocks a sample paid API, and indexes canonical blocks and g402 receipts.
 
 The repository also contains separately gated Akash, Filecoin/IPFS and Cosmos packages. Their live provider or chain integrations are not enabled in the hosted Gno product.
 
@@ -8,6 +14,7 @@ The repository also contains separately gated Akash, Filecoin/IPFS and Cosmos pa
 
 | Surface | What it does |
 | --- | --- |
+| `/webmcp` | Five top-level WebMCP tools, shared agent activity and human payment review handoff |
 | `/wallet` | Adena challenge → sign → verify → settle → paid retry flow |
 | `/scan` | Persistent Pearl blocks, transactions, addresses and g402 receipt search |
 | `/developers` | Runnable facilitator request formats and endpoints |
@@ -15,6 +22,36 @@ The repository also contains separately gated Akash, Filecoin/IPFS and Cosmos pa
 | `/api/health` | D1 connectivity, live RPC chain ID and mainnet lock probe |
 
 The hosted self-test pays the connected wallet back to itself so no merchant address is invented or custody key is required. A merchant deployment disables `G402_SELF_TEST_MODE` and sets its own `G402_MERCHANT_ADDRESS`.
+
+## WebMCP Challenge addition — September 2, 2026
+
+This repository existed as a GnoLand x402 facilitator and Scan before the challenge extension. The following product work was added for the WebMCP Challenge after August 25, 2026:
+
+- top-level imperative WebMCP registration through `document.modelContext.registerTool`
+- five narrow tools that reuse the live facilitator, health, Scan and receipt APIs
+- a shared `/webmcp` workspace that displays browser capability, prepared terms and recent tool calls
+- a verifiable agent-to-human handoff: the agent prepares one challenge and the wallet consumes those exact terms
+- WebMCP-path fail-closed checks for Pearl, direct WUGNOT, fixed 1,000 amount, self-recipient and mainnet lock, followed by server verification of the issued challenge and signed transaction
+- an exact payment-receipt lookup that avoids downloading the full payment ledger
+- deterministic WebMCP tests for tool schemas, unsafe configurations, tampered terms and bounded outputs
+
+### Site tools
+
+| Tool | Side effect | Purpose |
+| --- | --- | --- |
+| `inspect_g402_gateway` | None | Read live facilitator, indexer and mainnet-lock status |
+| `search_gno_activity` | None | Search at most five canonical Pearl transactions |
+| `prepare_pearl_payment` | Stores an expiring challenge | Prepare fixed self-test terms; never signs or sends |
+| `open_payment_review` | Navigates the shared page | Hand the exact prepared terms to the human review screen |
+| `get_payment_receipt` | None | Read one exact durable payment and block receipt |
+
+Suggested agent prompt:
+
+> Check whether the g402 gateway is healthy and mainnet is locked. Show recent Pearl activity. Then prepare a 1000 WUGNOT self-payment for my Adena address and open the human review screen.
+
+The agent cannot sign a transaction. The connected wallet must match the reviewed `payTo`, and the human must explicitly approve Adena. The challenge is rejected before signing if it is expired, changed, on another origin, on another network, uses another asset or amount, or if the live safety lock cannot be verified.
+
+WebMCP is currently a draft Community Group API. This implementation uses the top-level imperative API supported by ChatGPT's in-app browser and Chrome's WebMCP testing mode, and cleans up registrations with an `AbortController` lifecycle.
 
 ## Monorepo
 
@@ -52,7 +89,7 @@ npm run build
 npm audit --audit-level=high
 ~~~
 
-The current regression suite contains 51 tests. The CI workflow also checks the optional container topology.
+The regression suite includes dedicated WebMCP safety and workflow tests. The CI workflow also checks the optional container topology.
 
 ## API surface
 
@@ -76,4 +113,4 @@ Read docs/DEPLOYMENT.md, docs/RELEASE_CHECKLIST.md and each product runbook/thre
 
 ## License
 
-Apache-2.0 for off-chain code. Network-specific contracts, realms, providers and data are governed separately by their upstream terms.
+[Apache-2.0](LICENSE) for this repository. Network-specific upstream contracts, realms, providers and data remain governed by their respective upstream terms.

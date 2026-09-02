@@ -13,7 +13,7 @@
     "lint": "next lint",
     "test": "npm run test:services && npm run test:chain",
     "test:services": "node --experimental-transform-types --test --test-concurrency=1 tests/akash-e2e.test.ts tests/akash.test.ts tests/cosmos-e2e.test.ts tests/cosmos.test.ts tests/domain.test.ts tests/filecoin-e2e.test.ts tests/filecoin.test.ts",
-    "test:chain": "node --experimental-transform-types --test --test-concurrency=1 tests/adena.test.ts tests/challenge.test.ts tests/gno.test.ts tests/indexer.test.ts tests/policy.test.ts tests/rate-limit.test.ts tests/rpc-e2e.test.ts tests/store.test.ts",
+    "test:chain": "node --experimental-transform-types --test --test-concurrency=1 tests/adena.test.ts tests/challenge.test.ts tests/gno.test.ts tests/indexer.test.ts tests/policy.test.ts tests/rate-limit.test.ts tests/rpc-e2e.test.ts tests/store.test.ts tests/webmcp.test.ts",
     "typecheck": "tsc --noEmit",
     "worker": "tsx worker/indexer.ts",
     "worker:akash": "tsx worker/akash-lifecycle.ts",
