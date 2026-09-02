@@ -25,12 +25,14 @@ async function nativeTm2Execute(url:string,request:Parameters<RpcClient["execute
   let response:Response;
   try{response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(request),redirect:"error",signal:AbortSignal.timeout(10_000)})}catch{throw new Error("gno_rpc_unavailable")}
   if(!response.ok)throw new Error("gno_rpc_unavailable");
-  let body:{jsonrpc?:unknown;id?:unknown;result?:unknown;error?:unknown};
-  try{body=await response.json() as typeof body}catch{throw new Error("gno_rpc_unavailable")}
+  let parsed:unknown;
+  try{parsed=await response.json()}catch{throw new Error("gno_rpc_unavailable")}
+  if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error("gno_rpc_unavailable");
+  const body=parsed as {jsonrpc?:unknown;id?:unknown;result?:unknown;error?:unknown};
   if(body.jsonrpc!=="2.0"||body.id!==request.id||body.error||!("result" in body))throw new Error(body.error?`gno_rpc_error:${JSON.stringify(body.error).slice(0,400)}`:"gno_rpc_unavailable");
   return body as Awaited<ReturnType<RpcClient["execute"]>>;
 }
-async function connectNativeTm2(url:string):Promise<Tm2Client>{
+export async function connectNativeTm2(url:string):Promise<Tm2Client>{
   const client:RpcClient={disconnect(){},execute:request=>nativeTm2Execute(url,request)};
   return Tm2Client.create(client);
 }
