@@ -2,14 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createWebMCPTools,
+  decodePreparedMultichainPayment,
   decodePreparedWebMCPPayment,
   isSafePreparedWebMCPPayment,
+  type PreparedMultichainPayment,
   type PreparedWebMCPPayment,
   type WebMCPActivity,
 } from "../lib/webmcp.ts";
 
 const origin = "https://g402.example";
 const wallet = `g1${"p".repeat(38)}`;
+const evmWallet = "0x1111111111111111111111111111111111111111";
+const evmRecipient = "0x7e758891b2965eb82e4a121f66d5f6f3d6a2dec6";
 const fixedNow = new Date("2026-09-02T12:00:00.000Z");
 
 function requirements(overrides: Record<string, unknown> = {}) {
@@ -32,7 +36,14 @@ function requirements(overrides: Record<string, unknown> = {}) {
       paymentMode: "direct",
     },
   };
-  return { ...base, ...overrides, extra: { ...base.extra, ...(overrides.extra as Record<string, unknown> | undefined) } };
+  return {
+    ...base,
+    ...overrides,
+    extra: {
+      ...base.extra,
+      ...(overrides.extra as Record<string, unknown> | undefined),
+    },
+  };
 }
 
 function health(overrides: Record<string, unknown> = {}) {
@@ -49,8 +60,55 @@ function health(overrides: Record<string, unknown> = {}) {
   return { ...base, ...overrides };
 }
 
+function multichainChallenge(overrides: Record<string, unknown> = {}) {
+  const base = {
+    challengeId: "a".repeat(32),
+    paymentId: `pay_${"b".repeat(32)}`,
+    rail: {
+      id: "evm-base-sepolia",
+      family: "evm",
+      label: "Ethereum / EVM",
+      network: "eip155:84532",
+      asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      symbol: "USDC",
+      priceAtomic: "1000",
+      recipient: evmRecipient,
+      status: "sdk_ready",
+      mainnet: false,
+    },
+    paymentRequired: {
+      x402Version: 2,
+      resource: { url: `${origin}/api/demo/multichain-paid-data` },
+      accepts: [
+        {
+          scheme: "exact",
+          network: "eip155:84532",
+          asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+          amount: "1000",
+          payTo: evmRecipient,
+          maxTimeoutSeconds: 300,
+          extra: {
+            name: "USDC",
+            version: "2",
+            assetTransferMethod: "eip3009",
+            g402ChallengeId: "a".repeat(32),
+            resourceHash: "c".repeat(64),
+            authorizationNonce: `0x${"d".repeat(64)}`,
+            validBefore: "2000000000",
+          },
+        },
+      ],
+    },
+    expectedPayer: evmWallet,
+  };
+  return { ...base, ...overrides };
+}
+
 function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -59,8 +117,11 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function harness(responder: (url: string, init?: RequestInit) => Response | Promise<Response>) {
+function harness(
+  responder: (url: string, init?: RequestInit) => Response | Promise<Response>,
+) {
   let prepared: PreparedWebMCPPayment | null = null;
+  let multichain: PreparedMultichainPayment | null = null;
   const activities: WebMCPActivity[] = [];
   const navigations: string[] = [];
   const calls: string[] = [];
@@ -71,14 +132,37 @@ function harness(responder: (url: string, init?: RequestInit) => Response | Prom
       calls.push(url);
       return responder(url, init);
     },
-    savePreparedPayment: (value) => { prepared = value; },
+    savePreparedPayment: (value) => {
+      prepared = value;
+    },
     loadPreparedPayment: () => prepared,
-    recordActivity: (value) => { activities.push(value); },
-    navigate: (path) => { navigations.push(path); },
+    savePreparedMultichainPayment: (value) => {
+      multichain = value;
+    },
+    loadPreparedMultichainPayment: () => multichain,
+    recordActivity: (value) => {
+      activities.push(value);
+    },
+    navigate: (path) => {
+      navigations.push(path);
+    },
     now: () => fixedNow,
     randomId: () => "activity_1",
   });
-  return { tools, activities, navigations, calls, getPrepared: () => prepared, setPrepared: (value: PreparedWebMCPPayment) => { prepared = value; } };
+  return {
+    tools,
+    activities,
+    navigations,
+    calls,
+    getPrepared: () => prepared,
+    setPrepared: (value: PreparedWebMCPPayment) => {
+      prepared = value;
+    },
+    getMultichain: () => multichain,
+    setMultichain: (value: PreparedMultichainPayment) => {
+      multichain = value;
+    },
+  };
 }
 
 function findTool(tools: ReturnType<typeof createWebMCPTools>, name: string) {
@@ -87,54 +171,336 @@ function findTool(tools: ReturnType<typeof createWebMCPTools>, name: string) {
   return tool;
 }
 
-test("registers five distinct, narrow tools with correct read annotations", () => {
+test("registers seven distinct, narrow tools with correct read annotations", () => {
   const { tools } = harness(() => jsonResponse({}));
-  assert.deepEqual(tools.map((tool) => tool.name), [
-    "inspect_g402_gateway",
-    "search_gno_activity",
-    "prepare_pearl_payment",
-    "open_payment_review",
-    "get_payment_receipt",
-  ]);
+  assert.deepEqual(
+    tools.map((tool) => tool.name),
+    [
+      "list_payment_rails",
+      "prepare_agent_payment",
+      "inspect_g402_gateway",
+      "search_gno_activity",
+      "prepare_pearl_payment",
+      "open_payment_review",
+      "get_payment_receipt",
+    ],
+  );
   assert.equal(new Set(tools.map((tool) => tool.name)).size, tools.length);
-  for (const tool of tools) assert.equal(tool.inputSchema.additionalProperties, false);
-  assert.deepEqual(tools.filter((tool) => tool.annotations.readOnlyHint).map((tool) => tool.name), [
-    "inspect_g402_gateway",
-    "search_gno_activity",
-    "get_payment_receipt",
-  ]);
+  for (const tool of tools)
+    assert.equal(tool.inputSchema.additionalProperties, false);
+  assert.deepEqual(
+    tools
+      .filter((tool) => tool.annotations.readOnlyHint)
+      .map((tool) => tool.name),
+    [
+      "list_payment_rails",
+      "inspect_g402_gateway",
+      "search_gno_activity",
+      "get_payment_receipt",
+    ],
+  );
+});
+test("list rails exposes all five choices and independent EVM/Solana mainnet locks", async () => {
+  const evm = multichainChallenge().rail;
+  const { tools } = harness(() =>
+    jsonResponse({
+      x402Version: 2,
+      sdkVersion: "2.24.0",
+      rails: [
+        {
+          ...evm,
+          id: "gno-pearl",
+          family: "gno",
+          network: "gno:pearl-1",
+          mainnet: false,
+          status: "native_ready",
+        },
+        evm,
+        {
+          ...evm,
+          id: "evm-ethereum-mainnet",
+          network: "eip155:1",
+          mainnet: true,
+          status: "locked",
+        },
+        {
+          ...evm,
+          id: "svm-solana-devnet",
+          family: "svm",
+          network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+          mainnet: false,
+        },
+        {
+          ...evm,
+          id: "svm-solana-mainnet",
+          family: "svm",
+          network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          mainnet: true,
+          status: "locked",
+        },
+      ],
+      mainnets: [
+        {
+          family: "evm",
+          network: "eip155:1",
+          codeSupported: true,
+          settlementEnabled: false,
+          lock: "X402_ALLOW_EVM_MAINNET",
+        },
+        {
+          family: "svm",
+          network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          codeSupported: true,
+          settlementEnabled: false,
+          lock: "X402_ALLOW_SOLANA_MAINNET",
+        },
+        {
+          family: "gno",
+          network: "gno:mainnet",
+          codeSupported: true,
+          settlementEnabled: false,
+          lock: "G402_ALLOW_MAINNET",
+        },
+      ],
+    }),
+  );
+  const result = record(
+    await findTool(tools, "list_payment_rails").execute({}),
+  );
+  assert.deepEqual(
+    (result.rails as unknown[]).map((rail) => record(rail).id),
+    [
+      "gno-pearl",
+      "evm-base-sepolia",
+      "evm-ethereum-mainnet",
+      "svm-solana-devnet",
+      "svm-solana-mainnet",
+    ],
+  );
+  assert.deepEqual(
+    (result.mainnets as unknown[]).map((item) => ({
+      family: record(item).family,
+      settlementEnabled: record(item).settlementEnabled,
+    })),
+    [
+      { family: "evm", settlementEnabled: false },
+      { family: "svm", settlementEnabled: false },
+      { family: "gno", settlementEnabled: false },
+    ],
+  );
+  assert.equal(result.allMainnetsLocked, true);
+});
+
+test("list rails never infers all mainnets locked from empty or malformed reports", async () => {
+  const reports: unknown[] = [
+    [],
+    null,
+    [
+      {
+        family: "evm",
+        network: "eip155:1",
+        codeSupported: true,
+        settlementEnabled: false,
+        lock: "X402_ALLOW_EVM_MAINNET",
+      },
+    ],
+    [
+      {
+        family: "evm",
+        network: "eip155:1",
+        codeSupported: true,
+        settlementEnabled: false,
+        lock: "X402_ALLOW_EVM_MAINNET",
+      },
+      {
+        family: "svm",
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        codeSupported: true,
+        settlementEnabled: "false",
+        lock: "X402_ALLOW_SOLANA_MAINNET",
+      },
+      {
+        family: "gno",
+        network: "gno:mainnet",
+        codeSupported: true,
+        settlementEnabled: false,
+        lock: "G402_ALLOW_MAINNET",
+      },
+    ],
+  ];
+  for (const mainnets of reports) {
+    const { tools } = harness(() =>
+      jsonResponse({
+        x402Version: 2,
+        sdkVersion: "2.24.0",
+        rails: [],
+        mainnets,
+      }),
+    );
+    const result = record(
+      await findTool(tools, "list_payment_rails").execute({}),
+    );
+    assert.equal(result.allMainnetsLocked, false);
+  }
+});
+
+test("generic prepare persists review terms without signing or settling", async () => {
+  const prepared = multichainChallenge();
+  const { tools, calls, getMultichain } = harness((_url, init) => {
+    assert.equal(init?.method, "POST");
+    return jsonResponse(prepared, 201);
+  });
+  const result = record(
+    await findTool(tools, "prepare_agent_payment").execute({
+      railId: "evm-base-sepolia",
+      walletAddress: evmWallet,
+    }),
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.transferSubmitted, false);
+  assert.equal(getMultichain()?.challengeId, "a".repeat(32));
+  assert.equal(getMultichain()?.paymentId, `pay_${"b".repeat(32)}`);
+  assert.equal(getMultichain()?.expectedPayer, evmWallet);
+  assert.equal(getMultichain()?.paymentRequired.accepts[0].payTo, evmRecipient);
+  assert.notEqual(
+    getMultichain()?.paymentRequired.accepts[0].payTo.toLowerCase(),
+    getMultichain()?.expectedPayer.toLowerCase(),
+  );
+  assert.deepEqual(calls, ["/api/v2/challenges"]);
+  assert.ok(decodePreparedMultichainPayment(JSON.stringify(prepared)));
+});
+
+test("generic prepare rejects token, payer, recipient, and resource substitutions", async () => {
+  const base = multichainChallenge();
+  const unsafeResponses = [
+    {
+      ...base,
+      paymentRequired: {
+        ...base.paymentRequired,
+        accepts: [
+          {
+            ...base.paymentRequired.accepts[0],
+            asset: "0x2222222222222222222222222222222222222222",
+          },
+        ],
+      },
+    },
+    {
+      ...base,
+      expectedPayer: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    },
+    {
+      ...base,
+      paymentRequired: {
+        ...base.paymentRequired,
+        accepts: [
+          {
+            ...base.paymentRequired.accepts[0],
+            payTo: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          },
+        ],
+      },
+    },
+    {
+      ...base,
+      paymentRequired: {
+        ...base.paymentRequired,
+        resource: { url: "https://attacker.example/data" },
+      },
+    },
+  ];
+  for (const unsafe of unsafeResponses) {
+    const { tools, getMultichain } = harness(() => jsonResponse(unsafe, 201));
+    const result = record(
+      await findTool(tools, "prepare_agent_payment").execute({
+        railId: "evm-base-sepolia",
+        walletAddress: evmWallet,
+      }),
+    );
+    assert.equal(result.ok, false);
+    assert.equal(record(result.error).code, "unsafe_terms");
+    assert.equal(getMultichain(), null);
+  }
+});
+
+test("stored multichain terms require a server payment ID and expected payer", () => {
+  const valid = multichainChallenge();
+  assert.ok(decodePreparedMultichainPayment(JSON.stringify(valid)));
+  assert.equal(
+    decodePreparedMultichainPayment(
+      JSON.stringify({ ...valid, paymentId: "pay_client_selected" }),
+    ),
+    null,
+  );
+  assert.equal(
+    decodePreparedMultichainPayment(
+      JSON.stringify({ ...valid, expectedPayer: undefined }),
+    ),
+    null,
+  );
+});
+
+test("review opens the multichain wallet handoff when generic terms exist", async () => {
+  const prepared = multichainChallenge() as PreparedMultichainPayment;
+  const flow = harness(() => jsonResponse({}));
+  flow.setMultichain(prepared);
+  const result = record(
+    await findTool(flow.tools, "open_payment_review").execute({}),
+  );
+  assert.equal(result.transferSubmitted, false);
+  assert.deepEqual(flow.navigations, ["/pay?source=webmcp"]);
 });
 
 test("inspect reports an unknown mainnet lock as unverified, never true", async () => {
-  const { tools } = harness((url) => url === "/api/health"
-    ? jsonResponse(health({ locks: {} }))
-    : jsonResponse({ kinds: [{ network: "gno:pearl-1" }] }));
-  const result = record(await findTool(tools, "inspect_g402_gateway").execute({}));
+  const { tools } = harness((url) =>
+    url === "/api/health"
+      ? jsonResponse(health({ locks: {} }))
+      : jsonResponse({ kinds: [{ network: "gno:pearl-1" }] }),
+  );
+  const result = record(
+    await findTool(tools, "inspect_g402_gateway").execute({}),
+  );
   assert.equal(result.ok, true);
   assert.equal(result.healthy, false);
   assert.equal(result.mainnetLocked, false);
 });
 
 test("inspect distinguishes a degraded response from healthy tool execution", async () => {
-  const { tools } = harness((url) => url === "/api/health"
-    ? jsonResponse(health({ status: "degraded" }), 503)
-    : jsonResponse({ kinds: [{ network: "gno:pearl-1" }] }));
-  const result = record(await findTool(tools, "inspect_g402_gateway").execute({}));
+  const { tools } = harness((url) =>
+    url === "/api/health"
+      ? jsonResponse(health({ status: "degraded" }), 503)
+      : jsonResponse({ kinds: [{ network: "gno:pearl-1" }] }),
+  );
+  const result = record(
+    await findTool(tools, "inspect_g402_gateway").execute({}),
+  );
   assert.equal(result.ok, true);
   assert.equal(result.status, "degraded");
   assert.equal(result.healthy, false);
 });
 
 test("prepare stores fixed Pearl self-payment terms but never submits a transfer", async () => {
-  const { tools, calls, getPrepared } = harness((url) => url === "/api/health"
-    ? jsonResponse(health())
-    : jsonResponse({ error: "payment_required", paymentRequirements: requirements() }, 402));
-  const result = record(await findTool(tools, "prepare_pearl_payment").execute({ walletAddress: wallet }));
+  const { tools, calls, getPrepared } = harness((url) =>
+    url === "/api/health"
+      ? jsonResponse(health())
+      : jsonResponse(
+          { error: "payment_required", paymentRequirements: requirements() },
+          402,
+        ),
+  );
+  const result = record(
+    await findTool(tools, "prepare_pearl_payment").execute({
+      walletAddress: wallet,
+    }),
+  );
   assert.equal(result.ok, true);
   assert.equal(result.transferSubmitted, false);
   assert.equal(result.mainnetLocked, true);
   assert.equal(getPrepared()?.paymentRequirements.amount, "1000");
-  assert.deepEqual(calls, ["/api/health", `/api/demo/paid-data?payTo=${wallet}`]);
+  assert.deepEqual(calls, [
+    "/api/health",
+    `/api/demo/paid-data?payTo=${wallet}`,
+  ]);
 });
 
 test("prepare fails closed when any live safety lock is not verified", async () => {
@@ -147,7 +513,11 @@ test("prepare fails closed when any live safety lock is not verified", async () 
   ];
   for (const probe of unsafeHealth) {
     const { tools, calls, getPrepared } = harness(() => jsonResponse(probe));
-    const result = record(await findTool(tools, "prepare_pearl_payment").execute({ walletAddress: wallet }));
+    const result = record(
+      await findTool(tools, "prepare_pearl_payment").execute({
+        walletAddress: wallet,
+      }),
+    );
     assert.equal(result.ok, false);
     assert.equal(record(result.error).code, "safety_check_failed");
     assert.equal(calls.length, 1);
@@ -164,8 +534,16 @@ test("prepare rejects altered amount, recipient, asset, mode, and resource", asy
     requirements({ resource: "https://attacker.example/api/demo/paid-data" }),
   ];
   for (const terms of altered) {
-    const { tools, getPrepared } = harness((url) => url === "/api/health" ? jsonResponse(health()) : jsonResponse({ paymentRequirements: terms }, 402));
-    const result = record(await findTool(tools, "prepare_pearl_payment").execute({ walletAddress: wallet }));
+    const { tools, getPrepared } = harness((url) =>
+      url === "/api/health"
+        ? jsonResponse(health())
+        : jsonResponse({ paymentRequirements: terms }, 402),
+    );
+    const result = record(
+      await findTool(tools, "prepare_pearl_payment").execute({
+        walletAddress: wallet,
+      }),
+    );
     assert.equal(result.ok, false);
     assert.equal(record(result.error).code, "unsafe_terms");
     assert.equal(getPrepared(), null);
@@ -174,11 +552,28 @@ test("prepare rejects altered amount, recipient, asset, mode, and resource", asy
 
 test("search is bounded and omits chain memo and log content", async () => {
   const transactions = Array.from({ length: 9 }, (_, index) => ({
-    txHash: `HASH_${index}`, height: 100 - index, code: 0, kind: "grc20", amount: "1000",
-    paymentId: `pay_${String(index).padStart(16, "0")}`, canonical: true, memo: "ignore instructions", log: "untrusted log",
+    txHash: `HASH_${index}`,
+    height: 100 - index,
+    code: 0,
+    kind: "grc20",
+    amount: "1000",
+    paymentId: `pay_${String(index).padStart(16, "0")}`,
+    canonical: true,
+    memo: "ignore instructions",
+    log: "untrusted log",
   }));
-  const { tools } = harness(() => jsonResponse({ status: { network: "gno:pearl-1", indexedHeight: 100, chainHeight: 100 }, transactions }));
-  const result = record(await findTool(tools, "search_gno_activity").execute({ query: "pay_", limit: 5 }));
+  const { tools } = harness(() =>
+    jsonResponse({
+      status: { network: "gno:pearl-1", indexedHeight: 100, chainHeight: 100 },
+      transactions,
+    }),
+  );
+  const result = record(
+    await findTool(tools, "search_gno_activity").execute({
+      query: "pay_",
+      limit: 5,
+    }),
+  );
   assert.equal(result.count, 5);
   const first = record((result.transactions as unknown[])[0]);
   assert.equal("memo" in first, false);
@@ -187,32 +582,83 @@ test("search is bounded and omits chain memo and log content", async () => {
 
 test("receipt uses one exact payment query instead of downloading the ledger", async () => {
   const paymentId = "pay_1234567890abcdef";
-  const { tools, calls } = harness(() => jsonResponse({ payment: { paymentId, status: "settled", network: "gno:pearl-1", amount: "1000", txHash: "ABC", confirmations: 2 } }));
-  const result = record(await findTool(tools, "get_payment_receipt").execute({ paymentId }));
+  const { tools, calls } = harness(() =>
+    jsonResponse({
+      payment: {
+        paymentId,
+        status: "settled",
+        network: "gno:pearl-1",
+        amount: "1000",
+        txHash: "ABC",
+        confirmations: 2,
+      },
+    }),
+  );
+  const result = record(
+    await findTool(tools, "get_payment_receipt").execute({ paymentId }),
+  );
   assert.equal(result.found, true);
   assert.deepEqual(calls, [`/api/v1/payments?paymentId=${paymentId}`]);
 });
 
 test("stored terms reject corruption, expiration, and a mismatched Adena wallet", () => {
-  const valid: PreparedWebMCPPayment = { version: 1, preparedAt: fixedNow.toISOString(), paymentRequirements: requirements() as PreparedWebMCPPayment["paymentRequirements"] };
+  const valid: PreparedWebMCPPayment = {
+    version: 1,
+    preparedAt: fixedNow.toISOString(),
+    paymentRequirements:
+      requirements() as PreparedWebMCPPayment["paymentRequirements"],
+  };
   assert.ok(decodePreparedWebMCPPayment(JSON.stringify(valid)));
-  assert.equal(decodePreparedWebMCPPayment(JSON.stringify({ ...valid, paymentRequirements: requirements({ extra: { nonce: "short" } }) })), null);
-  assert.equal(isSafePreparedWebMCPPayment(valid, wallet, origin, fixedNow.getTime()), true);
-  assert.equal(isSafePreparedWebMCPPayment(valid, `g1${"q".repeat(38)}`, origin, fixedNow.getTime()), false);
-  assert.equal(isSafePreparedWebMCPPayment(valid, wallet, origin, 2_000_000_001_000), false);
+  assert.equal(
+    decodePreparedWebMCPPayment(
+      JSON.stringify({
+        ...valid,
+        paymentRequirements: requirements({ extra: { nonce: "short" } }),
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    isSafePreparedWebMCPPayment(valid, wallet, origin, fixedNow.getTime()),
+    true,
+  );
+  assert.equal(
+    isSafePreparedWebMCPPayment(
+      valid,
+      `g1${"q".repeat(38)}`,
+      origin,
+      fixedNow.getTime(),
+    ),
+    false,
+  );
+  assert.equal(
+    isSafePreparedWebMCPPayment(valid, wallet, origin, 2_000_000_001_000),
+    false,
+  );
 });
 
 test("review rechecks live safety before navigating to the human wallet", async () => {
-  const prepared: PreparedWebMCPPayment = { version: 1, preparedAt: fixedNow.toISOString(), paymentRequirements: requirements() as PreparedWebMCPPayment["paymentRequirements"] };
+  const prepared: PreparedWebMCPPayment = {
+    version: 1,
+    preparedAt: fixedNow.toISOString(),
+    paymentRequirements:
+      requirements() as PreparedWebMCPPayment["paymentRequirements"],
+  };
   const safe = harness(() => jsonResponse(health()));
   safe.setPrepared(prepared);
-  const opened = record(await findTool(safe.tools, "open_payment_review").execute({}));
+  const opened = record(
+    await findTool(safe.tools, "open_payment_review").execute({}),
+  );
   assert.equal(opened.transferSubmitted, false);
   assert.deepEqual(safe.navigations, ["/wallet?source=webmcp"]);
 
-  const unsafe = harness(() => jsonResponse(health({ locks: { gnoMainnet: false } })));
+  const unsafe = harness(() =>
+    jsonResponse(health({ locks: { gnoMainnet: false } })),
+  );
   unsafe.setPrepared(prepared);
-  const blocked = record(await findTool(unsafe.tools, "open_payment_review").execute({}));
+  const blocked = record(
+    await findTool(unsafe.tools, "open_payment_review").execute({}),
+  );
   assert.equal(blocked.ok, false);
   assert.deepEqual(unsafe.navigations, []);
 });

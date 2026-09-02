@@ -1,41 +1,62 @@
-# g402 threat model
+# x402 Agent Gateways threat model
 
 ## Scope and trust boundaries
 
-Protected assets are buyer funds, merchant revenue, challenge integrity, facilitator availability, canonical indexed history and operator credentials. The browser wallet, resource server, facilitator, D1, RPC node and bounded indexer are separate trust zones. Buyer private keys never cross the Adena boundary. Optional PostgreSQL agent mode adds agent budgets and approval decisions as protected assets.
+Protected assets are buyer funds, merchant revenue, challenge integrity, paid resources, settlement idempotency, canonical Gno history, and operator credentials. Trust zones are the WebMCP agent, browser UI, wallet extension, resource server, D1 ledger, external x402 facilitator, chain RPC, and Gno Scan indexer.
 
-## Threats and implemented controls
+Wallet private keys must remain inside EIP-1193, Wallet Standard, or Adena. WebMCP may prepare and navigate, but it cannot sign, settle, change a recipient, or enable a mainnet rail.
 
-| Threat | Control | Verification |
-| --- | --- | --- |
-| Recipient, amount or asset substitution | Decode one supported Amino message and compare exact fields | Gno tests |
-| Contract-path or call-argument substitution | Realm mode pins `g402pay`, `Pay`, exact send coin, payment ID, merchant, amount, resource hash and nonce | Gno realm-mode tests |
-| Contract receipt spoofing through another realm | Indexer exact-matches `/tm.gnoEvent`, package path, transaction fields, payer, recipient, amount, nonce and resource hash | Gno/indexer tests |
-| Inter-realm payment confusion | `g402pay` accepts only a direct EOA `IsUserCall`, verifies origin/caller equality and forwards from its own realm account | Gno contract tests/live acceptance |
-| Contract replay | Persistent AVL payment-ID uniqueness plus database payment-ID and nonce constraints | Gno/store tests |
-| Signer substitution | Derive the g1 address from the signed secp256k1 public key | Gno tests |
-| Resource/cross-chain replay | Signed chain ID, payment ID, random nonce and SHA-256 method/URL binding in memo | domain/Gno tests |
-| Duplicate broadcast | Unique payment ID, fingerprint and network/payer/nonce constraints; claim before RPC | store tests/migrations |
-| Idempotency-key mutation | A repeated payment ID with a different fingerprint fails with 409 | store tests |
-| Concurrent human approval | Durable approval_required state and compare-and-swap transition | store tests |
-| Agent budget bypass | Network, asset, allowlists, per-call/day/month limits and expiry checked twice | policy tests |
-| Parser/resource exhaustion | Strict schemas, integer/address bounds, 500 KB envelope cap and rate limit | schemas |
-| API key timing leak | SHA-256 and constant-time comparison | domain tests |
-| Serverless replay/rate-limit bypass | D1 unique payment/nonce claims and atomic shared buckets; production challenge storage fails closed without durable state | store/rate-limit tests |
-| Reorg/misleading status | Fork-preserving blocks, canonical checkpoint, confirmations, common-ancestor rewind and reverted state | indexer tests |
-| RPC or settlement outage | Fail closed, timeout, alert webhook and durable reconciliation state | adapter/runbook |
-| Mainnet fund movement | Independent settlement and mainnet flags, both default false | domain tests |
-| Web injection/clickjacking | CSP, frame denial, MIME and permissions headers | Next config |
+## Implemented controls
+
+| Threat                                                      | Control                                                                                                                                                        | Evidence                                |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Recipient, amount, asset, network, or resource substitution | Server-issued exact requirements and resource object are hashed and stored before signing; review, verify, and settle reload and compare them                  | Multichain binding/tamper tests         |
+| Payer substitution                                          | Challenge stores the expected wallet; EVM compares case-insensitively, Solana and Gno exactly; facilitator verification and settlement payer are checked again | Multichain tests                        |
+| EVM authorization mutation                                  | EIP-3009/EIP-712 fields pin `from`, `to`, value, authorization nonce, `validAfter=0`, and `validBefore`                                                        | SDK fixture and binding tests           |
+| Solana transaction mutation                                 | Server validates the initial message, creates a fresh SDK payload during review, atomically replaces its hash, and accepts only the refreshed signed message   | SDK fixture and review-refresh tests    |
+| Solana address or mint case confusion                       | SVM addresses and assets are exact and case-sensitive; Kit address parsing validates configured addresses                                                      | Registry/schema tests                   |
+| Stale Solana blockhash                                      | Review obtains a current blockhash while retaining the same challenge/payment ID; challenges with less than 15 seconds remaining are rejected                  | Review-refresh/expiry tests             |
+| Cross-resource or cross-chain replay                        | Server-issued challenge ID, payment ID, EVM nonce, resource hash, network, asset, amount, recipient, payer, and expiry are persisted                           | Store/multichain tests                  |
+| Duplicate settlement or idempotency-key mutation            | Unique payment ID/challenge claims and fingerprint comparison occur before external settlement                                                                 | Store/migration/concurrency tests       |
+| Lost response with a known transaction                      | `broadcast` plus a valid hash is durable; an identical retry reconciles finalized chain data and never invokes facilitator settlement again                    | Known-transaction reconciliation tests  |
+| Lost response without a transaction hash                    | Unknown outcome remains manual pending; retries return the stored state and never risk automatic re-submission                                                 | Transaction-less pending tests          |
+| False facilitator success                                   | Success tuple checks network, payer, optional amount, and family-specific transaction identifier; mismatch stays pending and does not unlock                   | Response-mismatch tests                 |
+| Signed payload larger than intended                         | v2 review, verify, and settle reject envelopes over 500 KB; schemas are strict and bounded                                                                     | Schema tests                            |
+| Unauthorized resource read                                  | Unlock requires a settled facilitator record, consumed challenge, and exact resource/network/asset/amount/recipient/payer binding                              | Store/resource tests                    |
+| Scan row mistaken for payment authorization                 | Chain-indexed rows have source `chain`; the protected resource accepts source `facilitator` only                                                               | Store/resource tests                    |
+| Agent-triggered mainnet movement                            | WebMCP preparation accepts testnet rail IDs only; EVM and Solana mainnets require two independent flags plus runtime prerequisites                             | WebMCP/rail tests                       |
+| Accidental mainnet configuration                            | Locked status is default; challenge creation also requires facilitator `/supported` confirmation for the exact network                                         | Rail tests and runtime check            |
+| Facilitator credential leakage                              | Custom URLs require HTTPS without userinfo/query/fragment; bearer token is server-only; public discovery returns only origin                                   | URL/config tests                        |
+| Gno direct-transfer substitution                            | Native verifier decodes one supported Amino message and compares exact fields and memo binding                                                                 | Gno tests                               |
+| Gno signer substitution                                     | Native verifier derives the g1 address from the signed secp256k1 public key                                                                                    | Gno tests                               |
+| Gno contract replay/spoofing                                | Realm source pins call path/method/coins/payment fields and uses payment-ID uniqueness; realm remains disabled until deployed                                  | Gno realm source/tests; deployment gate |
+| Reorg or misleading Gno status                              | Fork-preserving blocks, canonical checkpoint, confirmations, common-ancestor rewind, and `reverted` state                                                      | Indexer tests                           |
+| API abuse                                                   | Authorization policy, shared rate buckets, strict schemas, integer/address bounds, cache controls, and bounded search output                                   | HTTP/store tests                        |
+| Web injection/clickjacking                                  | CSP, frame denial, MIME, and permissions headers                                                                                                               | Runtime headers/config                  |
+
+## Mainnet gates
+
+Code support is not operational authorization.
+
+- Ethereum settlement requires both `X402_ALLOW_EVM_MAINNET=true` and `X402_ENABLE_EVM_MAINNET_SETTLEMENT=true`, a verified Ethereum recipient, and a production facilitator that advertises `eip155:1`.
+- Solana settlement requires both `X402_ALLOW_SOLANA_MAINNET=true` and `X402_ENABLE_SOLANA_MAINNET_SETTLEMENT=true`, a verified recipient with the correct USDC associated token account, an HTTPS mainnet RPC, and a production facilitator that advertises Solana mainnet.
+- Gno mainnet remains independently controlled by `G402_ALLOW_MAINNET`, `G402_ENABLE_SETTLEMENT`, explicit mainnet network configuration, and a verified merchant address.
+
+No mainnet gate should be enabled for the hackathon demonstration.
 
 ## Residual risks and release restrictions
 
-- Gno has no EIP-3009 equivalent. The pinned official Gno/TM2 codec and current Adena response shape pass deterministic tests, but one user-authorized live Adena Pearl transaction remains a release acceptance item.
-- `g402pay` source still requires compilation with the official Pearl `gno` binary and one funded deployment. Do not enable realm mode from source review alone.
-- The realm currently supports native `ugnot` only. GRC20 stays on the direct-transfer path until a separately reviewed allowance/pull design is implemented.
-- A single RPC is not Byzantine-resistant. Promotion requires two independent RPC providers and block/hash quorum.
-- The private Site trusts the authenticated user header only for index administration. A public multi-merchant service requires scoped identities instead of the current coarse bearer-key fallback.
-- Bounded request-driven indexing can lag when nobody visits or triggers sync. A production SLA requires scheduled authenticated POST calls or the persistent PostgreSQL worker.
-- D1 rate buckets require bounded retention. Per-instance metrics and structured logs need platform aggregation.
-- This Pearl testnet posture is not authorization for mainnet. Mainnet remains independently locked.
+- EVM and Solana automated evidence is deterministic SDK construction plus mocked facilitator behavior. A real EIP-1193 Base Sepolia transaction and a real Wallet Standard Solana Devnet transaction have not yet been recorded for this release.
+- The external facilitator is trusted to verify and broadcast correctly. Response binding prevents an inconsistent success from unlocking content. A later retry independently reconciles a known pending EVM/Solana transaction, but immediate facilitator successes are not automatically chain-indexed; production still needs continuous receipt monitoring.
+- Solana settlement can fail when the recipient lacks the associated token account for the configured USDC mint. Provision and verify the ATA before any live test or mainnet promotion.
+- The fallback EVM and Solana recipients are testnet demo sinks, not merchant-controlled accounts. Testnet transfers to them are irreversible at the protocol level and do not demonstrate merchant receipt.
+- Wallet extensions may present terms differently. Manual acceptance must compare the displayed network, asset, recipient, and amount with the in-app review.
+- EIP-1193 and Wallet Standard discovery trusts extensions installed in the browser. Users must choose the intended wallet and reject unexpected prompts.
+- A single facilitator or RPC is not Byzantine-resistant. Mainnet requires independent providers, finality policy, monitoring, and incident drills.
+- A transaction-less unknown outcome cannot be safely auto-retried or chain-reconciled. It intentionally remains manual pending until an operator establishes whether a broadcast occurred.
+- Gno has no EIP-3009 equivalent. Its pinned TM2 codec passes deterministic tests, but the exact release build still needs a user-authorized Adena Pearl acceptance check.
+- `g402pay` is not deployed. Do not set realm mode or describe contract receipts as live until funded deployment, package-path verification, and acceptance are complete.
+- Bounded request-driven Gno indexing can lag. A production SLA needs scheduled authenticated sync or the persistent PostgreSQL worker.
+- The private Site must not be presented as judge-accessible until access is explicitly tested from a non-owner session.
 
-An attacker cannot obtain the sample resource using only a signature: it requires a durable settled record. Approval follows persistence of the exact fingerprint. A reorg changes settled records to reverted, which downstream services must reject.
+An attacker cannot unlock the multichain sample with a signature alone. Authorization requires a matching durable settled record. Pending, broadcast, failed, mismatched, chain-derived, expired, or replay-mutated rows are rejected.

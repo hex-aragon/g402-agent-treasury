@@ -2,68 +2,832 @@ import { neon } from "@neondatabase/serverless";
 import type { AgentPolicy } from "./policy.ts";
 import { getD1 } from "../db/index.ts";
 import type { PaymentRequirements } from "./domain.ts";
+import type {
+  PaymentRequirements as X402PaymentRequirements,
+  ResourceInfo,
+} from "@x402/core/types";
+import { canonicalHash } from "../packages/x402-core/src/index.ts";
 
-export type PaymentStatus="verifying"|"verified"|"approval_required"|"settling"|"broadcast"|"settled"|"failed"|"reverted";
-export type PaymentRecord={id:string;paymentId:string;fingerprint?:string;nonce?:string;txHash:string|null;network:string;payer:string;payTo:string;asset:string;amount:string;status:PaymentStatus;error:string|null;resourceHash?:string;source?:"facilitator"|"chain";blockHeight?:number;blockHash?:string;confirmations?:number;merchantId?:string;agentId?:string;policyId?:string;serviceQuoteId?:string;createdAt:string;updatedAt?:string};
-const memory=new Map<string,PaymentRecord>();
-const usedNonces=new Set<string>();
-const memoryPolicies=new Map<string,AgentPolicy>();
-const memoryApprovals=new Map<string,"approved"|"rejected">();
-export type AgentRecord={id:string;name:string;walletAddress:string;status:"active"|"suspended";createdAt:string};
-const memoryAgents=new Map<string,AgentRecord>();
-type D1PaymentRow={id:string;payment_id:string;fingerprint:string;nonce:string;tx_hash:string|null;network:string;payer:string;pay_to:string;asset:string;amount:string;status:PaymentStatus;error:string|null;resource_hash:string|null;source:"facilitator"|"chain";block_height:number|null;block_hash:string|null;confirmations:number;merchant_id:string|null;agent_id:string|null;policy_id:string|null;service_quote_id:string|null;created_at:string;updated_at:string};
-function fromD1Payment(r:D1PaymentRow):PaymentRecord{return {id:r.id,paymentId:r.payment_id,fingerprint:r.fingerprint,nonce:r.nonce,txHash:r.tx_hash,network:r.network,payer:r.payer,payTo:r.pay_to,asset:r.asset,amount:String(r.amount),status:r.status,error:r.error,resourceHash:r.resource_hash||undefined,source:r.source,blockHeight:r.block_height??undefined,blockHash:r.block_hash||undefined,confirmations:Number(r.confirmations||0),merchantId:r.merchant_id||undefined,agentId:r.agent_id||undefined,policyId:r.policy_id||undefined,serviceQuoteId:r.service_quote_id||undefined,createdAt:r.created_at,updatedAt:r.updated_at}}
+export type PaymentStatus =
+  | "verifying"
+  | "verified"
+  | "approval_required"
+  | "settling"
+  | "broadcast"
+  | "settled"
+  | "failed"
+  | "reverted";
+export type PaymentRecord = {
+  id: string;
+  paymentId: string;
+  fingerprint?: string;
+  nonce?: string;
+  txHash: string | null;
+  network: string;
+  payer: string;
+  payTo: string;
+  asset: string;
+  amount: string;
+  status: PaymentStatus;
+  error: string | null;
+  resourceHash?: string;
+  source?: "facilitator" | "chain";
+  blockHeight?: number;
+  blockHash?: string;
+  confirmations?: number;
+  merchantId?: string;
+  agentId?: string;
+  policyId?: string;
+  serviceQuoteId?: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+const memory = new Map<string, PaymentRecord>();
+const usedNonces = new Set<string>();
+const memoryPolicies = new Map<string, AgentPolicy>();
+const memoryApprovals = new Map<string, "approved" | "rejected">();
+export type AgentRecord = {
+  id: string;
+  name: string;
+  walletAddress: string;
+  status: "active" | "suspended";
+  createdAt: string;
+};
+const memoryAgents = new Map<string, AgentRecord>();
+type D1PaymentRow = {
+  id: string;
+  payment_id: string;
+  fingerprint: string;
+  nonce: string;
+  tx_hash: string | null;
+  network: string;
+  payer: string;
+  pay_to: string;
+  asset: string;
+  amount: string;
+  status: PaymentStatus;
+  error: string | null;
+  resource_hash: string | null;
+  source: "facilitator" | "chain";
+  block_height: number | null;
+  block_hash: string | null;
+  confirmations: number;
+  merchant_id: string | null;
+  agent_id: string | null;
+  policy_id: string | null;
+  service_quote_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+function fromD1Payment(r: D1PaymentRow): PaymentRecord {
+  return {
+    id: r.id,
+    paymentId: r.payment_id,
+    fingerprint: r.fingerprint,
+    nonce: r.nonce,
+    txHash: r.tx_hash,
+    network: r.network,
+    payer: r.payer,
+    payTo: r.pay_to,
+    asset: r.asset,
+    amount: String(r.amount),
+    status: r.status,
+    error: r.error,
+    resourceHash: r.resource_hash || undefined,
+    source: r.source,
+    blockHeight: r.block_height ?? undefined,
+    blockHash: r.block_hash || undefined,
+    confirmations: Number(r.confirmations || 0),
+    merchantId: r.merchant_id || undefined,
+    agentId: r.agent_id || undefined,
+    policyId: r.policy_id || undefined,
+    serviceQuoteId: r.service_quote_id || undefined,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
 
-export type IssuedChallenge={nonce:string;resource:string;resourceHash:string;method:string;network:string;chainId:string;asset:string;denom:string;amount:string;payTo:string;paymentMode:"direct"|"realm";contractPath?:string;merchantId?:string;agentId?:string;policyId?:string;quoteId?:string;expiresAt:number;consumedBy?:string;createdAt:string};
-const memoryChallenges=new Map<string,IssuedChallenge>();
-function challengeExtra(challenge:IssuedChallenge){return {merchantId:challenge.merchantId,agentId:challenge.agentId,policyId:challenge.policyId,quoteId:challenge.quoteId}}
-function parsedExtra(value:unknown):Pick<IssuedChallenge,"merchantId"|"agentId"|"policyId"|"quoteId">{try{const parsed=typeof value==="string"?JSON.parse(value):value as Record<string,unknown>;return {merchantId:parsed?.merchantId?String(parsed.merchantId):undefined,agentId:parsed?.agentId?String(parsed.agentId):undefined,policyId:parsed?.policyId?String(parsed.policyId):undefined,quoteId:parsed?.quoteId?String(parsed.quoteId):undefined}}catch{return {}}}
-export async function saveChallenge(challenge:IssuedChallenge){const db=await getD1(),extra=challengeExtra(challenge);if(db){await db.prepare(`insert into payment_challenges(nonce,resource,resource_hash,method,network,chain_id,asset,denom,amount,pay_to,payment_mode,contract_path,extra_json,expires_at,consumed_by,created_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,null,?)`).bind(challenge.nonce,challenge.resource,challenge.resourceHash,challenge.method,challenge.network,challenge.chainId,challenge.asset,challenge.denom,challenge.amount,challenge.payTo,challenge.paymentMode,challenge.contractPath||null,JSON.stringify(extra),challenge.expiresAt,challenge.createdAt).run();return}if(process.env.DATABASE_URL){const sql=neon(process.env.DATABASE_URL);await sql`insert into payment_challenges(nonce,resource,resource_hash,method,network,chain_id,asset,denom,amount,pay_to,payment_mode,contract_path,extra,expires_at,created_at) values(${challenge.nonce},${challenge.resource},${challenge.resourceHash},${challenge.method},${challenge.network},${challenge.chainId},${challenge.asset},${challenge.denom},${challenge.amount},${challenge.payTo},${challenge.paymentMode},${challenge.contractPath||null},${JSON.stringify(extra)}::jsonb,${challenge.expiresAt},${challenge.createdAt})`;return}if(process.env.NODE_ENV==="production")throw new Error("durable_database_unavailable");memoryChallenges.set(challenge.nonce,challenge)}
-export async function findChallenge(nonce:string):Promise<IssuedChallenge|null>{
-  const db=await getD1();
-  if(db){
-    const r=await db.prepare(`select nonce,resource,resource_hash,method,network,chain_id,asset,denom,amount,pay_to,payment_mode,contract_path,extra_json,expires_at,consumed_by,created_at from payment_challenges where nonce=? limit 1`).bind(nonce).first<Record<string,unknown>>();
-    if(!r)return null;
-    return {nonce:String(r.nonce),resource:String(r.resource),resourceHash:String(r.resource_hash),method:String(r.method),network:String(r.network),chainId:String(r.chain_id),asset:String(r.asset),denom:String(r.denom),amount:String(r.amount),payTo:String(r.pay_to),paymentMode:r.payment_mode==="realm"?"realm":"direct",contractPath:r.contract_path?String(r.contract_path):undefined,...parsedExtra(r.extra_json),expiresAt:Number(r.expires_at),consumedBy:r.consumed_by?String(r.consumed_by):undefined,createdAt:String(r.created_at)};
+export type IssuedChallenge = {
+  nonce: string;
+  resource: string;
+  resourceHash: string;
+  method: string;
+  network: string;
+  chainId: string;
+  asset: string;
+  denom: string;
+  amount: string;
+  payTo: string;
+  paymentMode: "direct" | "realm";
+  contractPath?: string;
+  merchantId?: string;
+  agentId?: string;
+  policyId?: string;
+  quoteId?: string;
+  expectedPayer?: string;
+  expectedPaymentId?: string;
+  unsignedPayloadHash?: string;
+  railId?: string;
+  requirementsHash?: string;
+  requirements?: X402PaymentRequirements;
+  resourceInfo?: ResourceInfo;
+  expiresAt: number;
+  consumedBy?: string;
+  createdAt: string;
+};
+const memoryChallenges = new Map<string, IssuedChallenge>();
+function challengeExtra(challenge: IssuedChallenge) {
+  return {
+    merchantId: challenge.merchantId,
+    agentId: challenge.agentId,
+    policyId: challenge.policyId,
+    quoteId: challenge.quoteId,
+    expectedPayer: challenge.expectedPayer,
+    expectedPaymentId: challenge.expectedPaymentId,
+    unsignedPayloadHash: challenge.unsignedPayloadHash,
+    railId: challenge.railId,
+    requirementsHash: challenge.requirementsHash,
+    requirements: challenge.requirements,
+    resourceInfo: challenge.resourceInfo,
+  };
+}
+function parsedExtra(
+  value: unknown,
+): Pick<
+  IssuedChallenge,
+  | "merchantId"
+  | "agentId"
+  | "policyId"
+  | "quoteId"
+  | "expectedPayer"
+  | "expectedPaymentId"
+  | "unsignedPayloadHash"
+  | "railId"
+  | "requirementsHash"
+  | "requirements"
+  | "resourceInfo"
+> {
+  try {
+    const parsed =
+      typeof value === "string"
+        ? JSON.parse(value)
+        : (value as Record<string, unknown>);
+    return {
+      merchantId: parsed?.merchantId ? String(parsed.merchantId) : undefined,
+      agentId: parsed?.agentId ? String(parsed.agentId) : undefined,
+      policyId: parsed?.policyId ? String(parsed.policyId) : undefined,
+      quoteId: parsed?.quoteId ? String(parsed.quoteId) : undefined,
+      expectedPayer: parsed?.expectedPayer
+        ? String(parsed.expectedPayer)
+        : undefined,
+      expectedPaymentId: parsed?.expectedPaymentId
+        ? String(parsed.expectedPaymentId)
+        : undefined,
+      unsignedPayloadHash: parsed?.unsignedPayloadHash
+        ? String(parsed.unsignedPayloadHash)
+        : undefined,
+      railId: parsed?.railId ? String(parsed.railId) : undefined,
+      requirementsHash: parsed?.requirementsHash
+        ? String(parsed.requirementsHash)
+        : undefined,
+      requirements: parsed?.requirements as X402PaymentRequirements | undefined,
+      resourceInfo: parsed?.resourceInfo as ResourceInfo | undefined,
+    };
+  } catch {
+    return {};
   }
-  if(process.env.DATABASE_URL){
-    const sql=neon(process.env.DATABASE_URL),rows=await sql`select * from payment_challenges where nonce=${nonce} limit 1`,r=rows[0];
-    if(!r)return null;
-    return {nonce:String(r.nonce),resource:String(r.resource),resourceHash:String(r.resource_hash),method:String(r.method),network:String(r.network),chainId:String(r.chain_id),asset:String(r.asset),denom:String(r.denom),amount:String(r.amount),payTo:String(r.pay_to),paymentMode:r.payment_mode==="realm"?"realm":"direct",contractPath:r.contract_path?String(r.contract_path):undefined,...parsedExtra(r.extra),expiresAt:Number(r.expires_at),consumedBy:r.consumed_by?String(r.consumed_by):undefined,createdAt:new Date(r.created_at).toISOString()};
+}
+export async function saveChallenge(challenge: IssuedChallenge) {
+  const db = await getD1(),
+    extra = challengeExtra(challenge);
+  if (db) {
+    await db
+      .prepare(
+        `insert into payment_challenges(nonce,resource,resource_hash,method,network,chain_id,asset,denom,amount,pay_to,payment_mode,contract_path,extra_json,expires_at,consumed_by,created_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,null,?)`,
+      )
+      .bind(
+        challenge.nonce,
+        challenge.resource,
+        challenge.resourceHash,
+        challenge.method,
+        challenge.network,
+        challenge.chainId,
+        challenge.asset,
+        challenge.denom,
+        challenge.amount,
+        challenge.payTo,
+        challenge.paymentMode,
+        challenge.contractPath || null,
+        JSON.stringify(extra),
+        challenge.expiresAt,
+        challenge.createdAt,
+      )
+      .run();
+    return;
   }
-  if(process.env.NODE_ENV==="production")throw new Error("durable_database_unavailable");
-  return memoryChallenges.get(nonce)||null;
+  if (process.env.DATABASE_URL) {
+    const sql = neon(process.env.DATABASE_URL);
+    await sql`insert into payment_challenges(nonce,resource,resource_hash,method,network,chain_id,asset,denom,amount,pay_to,payment_mode,contract_path,extra,expires_at,created_at) values(${challenge.nonce},${challenge.resource},${challenge.resourceHash},${challenge.method},${challenge.network},${challenge.chainId},${challenge.asset},${challenge.denom},${challenge.amount},${challenge.payTo},${challenge.paymentMode},${challenge.contractPath || null},${JSON.stringify(extra)}::jsonb,${challenge.expiresAt},${challenge.createdAt})`;
+    return;
+  }
+  if (process.env.NODE_ENV === "production")
+    throw new Error("durable_database_unavailable");
+  memoryChallenges.set(challenge.nonce, challenge);
 }
-export async function validateIssuedChallenge(requirements:PaymentRequirements,now=Math.floor(Date.now()/1000)):Promise<IssuedChallenge>{const issued=await findChallenge(requirements.extra.nonce);if(!issued)throw new Error("challenge_not_issued");if(issued.expiresAt<now)throw new Error("challenge_expired");const same=issued.resource===requirements.resource&&issued.resourceHash===requirements.extra.resourceHash&&issued.network===requirements.network&&issued.chainId===requirements.extra.chainId&&issued.asset===requirements.asset&&issued.denom===requirements.extra.denom&&issued.amount===requirements.amount&&issued.payTo===requirements.payTo&&issued.paymentMode===(requirements.extra.paymentMode||"direct")&&(issued.contractPath||"")===(requirements.extra.contractPath||"")&&(issued.merchantId||"")===(requirements.extra.merchantId||"")&&(issued.agentId||"")===(requirements.extra.agentId||"")&&(issued.policyId||"")===(requirements.extra.policyId||"")&&(issued.quoteId||"")===(requirements.extra.quoteId||"");if(!same)throw new Error("challenge_mismatch");return issued}
-export async function findPayment(paymentId:string):Promise<PaymentRecord|null>{
-  const db=await getD1();if(db){const row=await db.prepare(`select * from payments where payment_id=? limit 1`).bind(paymentId).first<D1PaymentRow>();return row?fromD1Payment(row):null}
-  if(!process.env.DATABASE_URL)return memory.get(paymentId)||null;
-  const sql=neon(process.env.DATABASE_URL); const rows=await sql`select * from payments where payment_id=${paymentId} limit 1`;
-  if(!rows[0])return null; const r=rows[0]; return {id:r.id,paymentId:r.payment_id,fingerprint:r.fingerprint||undefined,nonce:r.nonce||undefined,txHash:r.tx_hash,network:r.network,payer:r.payer,payTo:r.pay_to,asset:r.asset,amount:String(r.amount),status:r.status,error:r.error,resourceHash:r.resource_hash||undefined,source:r.source||"facilitator",blockHeight:r.block_height==null?undefined:Number(r.block_height),blockHash:r.block_hash||undefined,confirmations:Number(r.confirmations||0),merchantId:r.merchant_id||undefined,agentId:r.agent_id||undefined,policyId:r.policy_id||undefined,serviceQuoteId:r.service_quote_id||undefined,createdAt:new Date(r.created_at).toISOString(),updatedAt:new Date(r.updated_at).toISOString()};
+export async function findChallenge(
+  nonce: string,
+): Promise<IssuedChallenge | null> {
+  const db = await getD1();
+  if (db) {
+    const r = await db
+      .prepare(
+        `select nonce,resource,resource_hash,method,network,chain_id,asset,denom,amount,pay_to,payment_mode,contract_path,extra_json,expires_at,consumed_by,created_at from payment_challenges where nonce=? limit 1`,
+      )
+      .bind(nonce)
+      .first<Record<string, unknown>>();
+    if (!r) return null;
+    return {
+      nonce: String(r.nonce),
+      resource: String(r.resource),
+      resourceHash: String(r.resource_hash),
+      method: String(r.method),
+      network: String(r.network),
+      chainId: String(r.chain_id),
+      asset: String(r.asset),
+      denom: String(r.denom),
+      amount: String(r.amount),
+      payTo: String(r.pay_to),
+      paymentMode: r.payment_mode === "realm" ? "realm" : "direct",
+      contractPath: r.contract_path ? String(r.contract_path) : undefined,
+      ...parsedExtra(r.extra_json),
+      expiresAt: Number(r.expires_at),
+      consumedBy: r.consumed_by ? String(r.consumed_by) : undefined,
+      createdAt: String(r.created_at),
+    };
+  }
+  if (process.env.DATABASE_URL) {
+    const sql = neon(process.env.DATABASE_URL),
+      rows =
+        await sql`select * from payment_challenges where nonce=${nonce} limit 1`,
+      r = rows[0];
+    if (!r) return null;
+    return {
+      nonce: String(r.nonce),
+      resource: String(r.resource),
+      resourceHash: String(r.resource_hash),
+      method: String(r.method),
+      network: String(r.network),
+      chainId: String(r.chain_id),
+      asset: String(r.asset),
+      denom: String(r.denom),
+      amount: String(r.amount),
+      payTo: String(r.pay_to),
+      paymentMode: r.payment_mode === "realm" ? "realm" : "direct",
+      contractPath: r.contract_path ? String(r.contract_path) : undefined,
+      ...parsedExtra(r.extra),
+      expiresAt: Number(r.expires_at),
+      consumedBy: r.consumed_by ? String(r.consumed_by) : undefined,
+      createdAt: new Date(r.created_at).toISOString(),
+    };
+  }
+  if (process.env.NODE_ENV === "production")
+    throw new Error("durable_database_unavailable");
+  return memoryChallenges.get(nonce) || null;
 }
-export async function savePayment(record:PaymentRecord):Promise<void>{
-  const db=await getD1();if(db){const updatedAt=record.updatedAt||new Date().toISOString();await db.prepare(`insert into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,block_height,block_hash,confirmations,merchant_id,agent_id,policy_id,service_quote_id,created_at,updated_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) on conflict(payment_id) do update set tx_hash=excluded.tx_hash,status=case when payments.status='settled' and excluded.status<>'reverted' then payments.status else excluded.status end,error=case when payments.status='settled' and excluded.status<>'reverted' then payments.error else excluded.error end,block_height=coalesce(excluded.block_height,payments.block_height),block_hash=coalesce(excluded.block_hash,payments.block_hash),confirmations=max(payments.confirmations,excluded.confirmations),updated_at=excluded.updated_at`).bind(record.id,record.paymentId,record.fingerprint||`legacy:${record.paymentId}`,record.nonce||record.paymentId,record.txHash,record.network,record.payer,record.payTo,record.asset,record.amount,record.status,record.error,record.resourceHash||null,record.source||"facilitator",record.blockHeight??null,record.blockHash||null,record.confirmations||0,record.merchantId||null,record.agentId||null,record.policyId||null,record.serviceQuoteId||null,record.createdAt,updatedAt).run();return}
-  if(!process.env.DATABASE_URL){memory.set(record.paymentId,record);return;}
-  const sql=neon(process.env.DATABASE_URL); await sql`insert into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,block_height,block_hash,confirmations,merchant_id,agent_id,policy_id,service_quote_id,created_at) values(${record.id},${record.paymentId},${record.fingerprint||null},${record.nonce||null},${record.txHash},${record.network},${record.payer},${record.payTo},${record.asset},${record.amount},${record.status},${record.error},${record.resourceHash||null},${record.source||"facilitator"},${record.blockHeight||null},${record.blockHash||null},${record.confirmations||0},${record.merchantId||null},${record.agentId||null},${record.policyId||null},${record.serviceQuoteId||null},${record.createdAt}) on conflict(payment_id) do update set tx_hash=excluded.tx_hash,status=case when payments.status='settled' and excluded.status<>'reverted' then payments.status else excluded.status end,error=case when payments.status='settled' and excluded.status<>'reverted' then payments.error else excluded.error end,block_height=coalesce(excluded.block_height,payments.block_height),block_hash=coalesce(excluded.block_hash,payments.block_hash),confirmations=greatest(payments.confirmations,excluded.confirmations),updated_at=now()`;
+export async function validateIssuedChallenge(
+  requirements: PaymentRequirements,
+  now = Math.floor(Date.now() / 1000),
+): Promise<IssuedChallenge> {
+  const issued = await findChallenge(requirements.extra.nonce);
+  if (!issued) throw new Error("challenge_not_issued");
+  if (issued.expiresAt < now) throw new Error("challenge_expired");
+  const same =
+    issued.resource === requirements.resource &&
+    issued.resourceHash === requirements.extra.resourceHash &&
+    issued.network === requirements.network &&
+    issued.chainId === requirements.extra.chainId &&
+    issued.asset === requirements.asset &&
+    issued.denom === requirements.extra.denom &&
+    issued.amount === requirements.amount &&
+    issued.payTo === requirements.payTo &&
+    issued.paymentMode === (requirements.extra.paymentMode || "direct") &&
+    (issued.contractPath || "") === (requirements.extra.contractPath || "") &&
+    (issued.merchantId || "") === (requirements.extra.merchantId || "") &&
+    (issued.agentId || "") === (requirements.extra.agentId || "") &&
+    (issued.policyId || "") === (requirements.extra.policyId || "") &&
+    (issued.quoteId || "") === (requirements.extra.quoteId || "");
+  if (!same) throw new Error("challenge_mismatch");
+  return issued;
+}
+export async function validateProtocolChallenge(
+  challengeId: string,
+  requirements: X402PaymentRequirements,
+  now = Math.floor(Date.now() / 1000),
+): Promise<IssuedChallenge> {
+  const issued = await findChallenge(challengeId);
+  if (
+    !issued ||
+    !issued.railId ||
+    !issued.requirementsHash ||
+    !issued.requirements
+  )
+    throw new Error("challenge_not_issued");
+  if (issued.expiresAt < now) throw new Error("challenge_expired");
+  const hash = canonicalHash(requirements);
+  const same =
+    hash === issued.requirementsHash &&
+    hash === canonicalHash(issued.requirements) &&
+    issued.network === requirements.network &&
+    issued.asset === requirements.asset &&
+    issued.amount === requirements.amount &&
+    issued.payTo === requirements.payTo;
+  if (!same) throw new Error("challenge_mismatch");
+  return issued;
 }
 
-export async function claimSettlement(record:PaymentRecord):Promise<{claimed:boolean;existing:PaymentRecord|null}>{
-  const db=await getD1();if(db){const existing=await findPayment(record.paymentId);if(existing){if(existing.fingerprint!==record.fingerprint)throw new Error("idempotency_conflict");return {claimed:false,existing}}const now=Math.floor(Date.now()/1000),createdAt=record.createdAt,updatedAt=record.updatedAt||createdAt;const inserted=await db.prepare(`insert or ignore into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,block_height,block_hash,confirmations,merchant_id,agent_id,policy_id,service_quote_id,created_at,updated_at) select ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? where exists(select 1 from payment_challenges where nonce=? and consumed_by is null and expires_at>=?)`).bind(record.id,record.paymentId,record.fingerprint||"",record.nonce||"",record.txHash,record.network,record.payer,record.payTo,record.asset,record.amount,record.status,record.error,record.resourceHash||null,record.source||"facilitator",record.blockHeight??null,record.blockHash||null,record.confirmations||0,record.merchantId||null,record.agentId||null,record.policyId||null,record.serviceQuoteId||null,createdAt,updatedAt,record.nonce||"",now).run();if((inserted.meta.changes||0)===1){await db.prepare(`update payment_challenges set consumed_by=? where nonce=? and consumed_by is null`).bind(record.paymentId,record.nonce||"").run();return {claimed:true,existing:null}}const conflict=await findPayment(record.paymentId);if(conflict){if(conflict.fingerprint!==record.fingerprint)throw new Error("idempotency_conflict");return {claimed:false,existing:conflict}}throw new Error("nonce_reused")}
-  if(!process.env.DATABASE_URL){const existing=memory.get(record.paymentId)||null;if(existing){if(existing.fingerprint!==record.fingerprint)throw new Error("idempotency_conflict");return {claimed:false,existing}}const nonceKey=`${record.network}:${record.payer}:${record.nonce}`;if(usedNonces.has(nonceKey))throw new Error("nonce_reused");usedNonces.add(nonceKey);memory.set(record.paymentId,record);return {claimed:true,existing:null}}
-  const sql=neon(process.env.DATABASE_URL);const rows=await sql`with claimed as (insert into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,merchant_id,agent_id,policy_id,service_quote_id,created_at) select ${record.id},${record.paymentId},${record.fingerprint},${record.nonce},${record.txHash},${record.network},${record.payer},${record.payTo},${record.asset},${record.amount},${record.status},null,${record.resourceHash||null},${record.source||"facilitator"},${record.merchantId||null},${record.agentId||null},${record.policyId||null},${record.serviceQuoteId||null},${record.createdAt} from payment_challenges where nonce=${record.nonce} and consumed_by is null and expires_at>=extract(epoch from now())::bigint on conflict do nothing returning payment_id) update payment_challenges set consumed_by=${record.paymentId} where nonce=${record.nonce} and exists(select 1 from claimed) returning consumed_by`;
-  if(rows.length)return {claimed:true,existing:null};const existing=await findPayment(record.paymentId);if(existing&&existing.fingerprint!==record.fingerprint)throw new Error("idempotency_conflict");if(!existing)throw new Error("nonce_reused");return {claimed:false,existing};
+export async function replaceChallengeUnsignedPayloadHash(
+  challengeId: string,
+  expectedHash: string,
+  nextHash: string,
+  now = Math.floor(Date.now() / 1000),
+): Promise<boolean> {
+  const issued = await findChallenge(challengeId);
+  if (
+    !issued ||
+    issued.consumedBy ||
+    issued.expiresAt < now ||
+    issued.unsignedPayloadHash !== expectedHash
+  )
+    return false;
+  const extra = JSON.stringify(
+    challengeExtra({ ...issued, unsignedPayloadHash: nextHash }),
+  );
+  const db = await getD1();
+  if (db) {
+    const result = await db
+      .prepare(
+        `update payment_challenges set extra_json=? where nonce=? and consumed_by is null and expires_at>=? and json_extract(extra_json,'$.unsignedPayloadHash')=?`,
+      )
+      .bind(extra, challengeId, now, expectedHash)
+      .run();
+    return (result.meta.changes || 0) === 1;
+  }
+  if (!process.env.DATABASE_URL) {
+    memoryChallenges.set(challengeId, {
+      ...issued,
+      unsignedPayloadHash: nextHash,
+    });
+    return true;
+  }
+  const sql = neon(process.env.DATABASE_URL);
+  const rows = await sql`update payment_challenges set extra=${extra}::jsonb where nonce=${challengeId} and consumed_by is null and expires_at>=${now} and extra->>'unsignedPayloadHash'=${expectedHash} returning nonce`;
+  return rows.length === 1;
 }
-export async function resumeApprovedSettlement(paymentId:string,fingerprint:string):Promise<boolean>{const db=await getD1();if(db){const result=await db.prepare(`update payments set status='settling',updated_at=? where payment_id=? and fingerprint=? and status='approval_required'`).bind(new Date().toISOString(),paymentId,fingerprint).run();return (result.meta.changes||0)===1}if(!process.env.DATABASE_URL){const record=memory.get(paymentId);if(!record||record.fingerprint!==fingerprint||record.status!=="approval_required")return false;memory.set(paymentId,{...record,status:"settling"});return true}const sql=neon(process.env.DATABASE_URL);const rows=await sql`update payments set status='settling',updated_at=now() where payment_id=${paymentId} and fingerprint=${fingerprint} and status='approval_required' returning payment_id`;return rows.length===1}
-export async function getPolicyUsage(agentId:string,now=new Date()):Promise<{daily:string;monthly:string}>{
-  const db=await getD1();if(db){const month=now.toISOString().slice(0,7),day=now.toISOString().slice(0,10),rows=await db.prepare(`select amount,created_at from payments where agent_id=? and status in('settling','broadcast','settled') and substr(created_at,1,7)=?`).bind(agentId,month).all<{amount:string;created_at:string}>();let daily=0n,monthly=0n;for(const row of rows.results){const amount=BigInt(row.amount);monthly+=amount;if(row.created_at.slice(0,10)===day)daily+=amount}return {daily:String(daily),monthly:String(monthly)}}
-  if(!process.env.DATABASE_URL){let daily=0n,monthly=0n;for(const p of memory.values())if(p.status==="settled"){const d=new Date(p.createdAt);if(d.getUTCFullYear()===now.getUTCFullYear()&&d.getUTCMonth()===now.getUTCMonth()){monthly+=BigInt(p.amount);if(d.getUTCDate()===now.getUTCDate())daily+=BigInt(p.amount)}}return {daily:String(daily),monthly:String(monthly)}}
-  const sql=neon(process.env.DATABASE_URL);const rows=await sql`select coalesce(sum(amount) filter(where created_at>=date_trunc('day',now())),0)::text daily,coalesce(sum(amount) filter(where created_at>=date_trunc('month',now())),0)::text monthly from payments where agent_id=${agentId} and status='settled'`;return {daily:String(rows[0]?.daily||"0"),monthly:String(rows[0]?.monthly||"0")}
+export async function findPayment(
+  paymentId: string,
+): Promise<PaymentRecord | null> {
+  const db = await getD1();
+  if (db) {
+    const row = await db
+      .prepare(`select * from payments where payment_id=? limit 1`)
+      .bind(paymentId)
+      .first<D1PaymentRow>();
+    return row ? fromD1Payment(row) : null;
+  }
+  if (!process.env.DATABASE_URL) return memory.get(paymentId) || null;
+  const sql = neon(process.env.DATABASE_URL);
+  const rows =
+    await sql`select * from payments where payment_id=${paymentId} limit 1`;
+  if (!rows[0]) return null;
+  const r = rows[0];
+  return {
+    id: r.id,
+    paymentId: r.payment_id,
+    fingerprint: r.fingerprint || undefined,
+    nonce: r.nonce || undefined,
+    txHash: r.tx_hash,
+    network: r.network,
+    payer: r.payer,
+    payTo: r.pay_to,
+    asset: r.asset,
+    amount: String(r.amount),
+    status: r.status,
+    error: r.error,
+    resourceHash: r.resource_hash || undefined,
+    source: r.source || "facilitator",
+    blockHeight: r.block_height == null ? undefined : Number(r.block_height),
+    blockHash: r.block_hash || undefined,
+    confirmations: Number(r.confirmations || 0),
+    merchantId: r.merchant_id || undefined,
+    agentId: r.agent_id || undefined,
+    policyId: r.policy_id || undefined,
+    serviceQuoteId: r.service_quote_id || undefined,
+    createdAt: new Date(r.created_at).toISOString(),
+    updatedAt: new Date(r.updated_at).toISOString(),
+  };
 }
-export async function appendAudit(actor:string,action:string,target:string,metadata:Record<string,unknown>={}){const db=await getD1();if(db){await db.prepare(`insert into audit_log(id,actor,action,target,metadata_json,created_at) values(?,?,?,?,?,?)`).bind(crypto.randomUUID(),actor,action,target,JSON.stringify(metadata),new Date().toISOString()).run();return}if(!process.env.DATABASE_URL)return;const sql=neon(process.env.DATABASE_URL);await sql`insert into audit_log(id,actor,action,target,metadata) values(${crypto.randomUUID()},${actor},${action},${target},${JSON.stringify(metadata)}::jsonb)`}
-export async function getAgentPolicy(agentId:string):Promise<AgentPolicy|null>{if(!process.env.DATABASE_URL)return [...memoryPolicies.values()].find(p=>p.agentId===agentId&&p.enabled)||null;const sql=neon(process.env.DATABASE_URL);const rows=await sql`select * from agent_policies where agent_id=${agentId} and enabled=true order by created_at desc limit 1`;if(!rows[0])return null;const r=rows[0];return {id:r.id,agentId:r.agent_id,enabled:r.enabled,network:r.network,allowedMerchants:r.allowed_merchants||[],allowedRecipients:r.allowed_recipients||[],allowedAssets:r.allowed_assets||[],maxPerPayment:String(r.max_per_payment),dailyBudget:String(r.daily_budget),monthlyBudget:String(r.monthly_budget),approvalThreshold:String(r.approval_threshold),validFrom:new Date(r.valid_from).toISOString(),validUntil:new Date(r.valid_until).toISOString(),requireResourceBinding:r.require_resource_binding}}
-export async function hasApproval(paymentId:string):Promise<boolean>{if(!process.env.DATABASE_URL)return [...memoryApprovals.entries()].some(([key,value])=>key.startsWith(`${paymentId}:`)&&value==="approved");const sql=neon(process.env.DATABASE_URL);const rows=await sql`select 1 from payment_approvals where payment_id=${paymentId} and decision='approved' limit 1`;return rows.length>0}
-export async function listPayments(limit=100):Promise<PaymentRecord[]>{const db=await getD1();if(db){const rows=await db.prepare(`select * from payments order by created_at desc limit ?`).bind(Math.min(Math.max(limit,1),500)).all<D1PaymentRow>();return rows.results.map(fromD1Payment)}if(!process.env.DATABASE_URL)return [...memory.values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,limit);const sql=neon(process.env.DATABASE_URL);const rows=await sql`select * from payments order by created_at desc limit ${Math.min(Math.max(limit,1),500)}`;return rows.map(r=>({id:r.id,paymentId:r.payment_id,fingerprint:r.fingerprint||undefined,nonce:r.nonce||undefined,txHash:r.tx_hash,network:r.network,payer:r.payer,payTo:r.pay_to,asset:r.asset,amount:String(r.amount),status:r.status,error:r.error,resourceHash:r.resource_hash||undefined,source:r.source||"facilitator",blockHeight:r.block_height==null?undefined:Number(r.block_height),blockHash:r.block_hash||undefined,confirmations:Number(r.confirmations||0),merchantId:r.merchant_id||undefined,agentId:r.agent_id||undefined,policyId:r.policy_id||undefined,serviceQuoteId:r.service_quote_id||undefined,createdAt:new Date(r.created_at).toISOString(),updatedAt:new Date(r.updated_at).toISOString()}))}
-export async function upsertAgentPolicy(policy:AgentPolicy){if(!process.env.DATABASE_URL){memoryPolicies.set(policy.id,policy);return}const sql=neon(process.env.DATABASE_URL);await sql`insert into agent_policies(id,agent_id,enabled,network,allowed_merchants,allowed_recipients,allowed_assets,max_per_payment,daily_budget,monthly_budget,approval_threshold,valid_from,valid_until,require_resource_binding) values(${policy.id},${policy.agentId},${policy.enabled},${policy.network},${policy.allowedMerchants},${policy.allowedRecipients},${policy.allowedAssets},${policy.maxPerPayment},${policy.dailyBudget},${policy.monthlyBudget},${policy.approvalThreshold},${policy.validFrom},${policy.validUntil},${policy.requireResourceBinding}) on conflict(id) do update set enabled=excluded.enabled,network=excluded.network,allowed_merchants=excluded.allowed_merchants,allowed_recipients=excluded.allowed_recipients,allowed_assets=excluded.allowed_assets,max_per_payment=excluded.max_per_payment,daily_budget=excluded.daily_budget,monthly_budget=excluded.monthly_budget,approval_threshold=excluded.approval_threshold,valid_from=excluded.valid_from,valid_until=excluded.valid_until,require_resource_binding=excluded.require_resource_binding,updated_at=now()`}
-export async function recordApproval(paymentId:string,approver:string,decision:"approved"|"rejected",reason?:string){if(!process.env.DATABASE_URL){memoryApprovals.set(`${paymentId}:${approver}`,decision);return}const sql=neon(process.env.DATABASE_URL);await sql`insert into payment_approvals(id,payment_id,approver,decision,reason) values(${crypto.randomUUID()},${paymentId},${approver},${decision},${reason||null}) on conflict(payment_id,approver) do update set decision=excluded.decision,reason=excluded.reason,created_at=now()`}
-export async function upsertAgent(agent:AgentRecord){if(!process.env.DATABASE_URL){memoryAgents.set(agent.id,agent);return}const sql=neon(process.env.DATABASE_URL);await sql`insert into agents(id,name,wallet_address,status,created_at) values(${agent.id},${agent.name},${agent.walletAddress},${agent.status},${agent.createdAt}) on conflict(id) do update set name=excluded.name,wallet_address=excluded.wallet_address,status=excluded.status,updated_at=now()`}
-export async function listAgents(limit=100):Promise<AgentRecord[]>{if(!process.env.DATABASE_URL)return [...memoryAgents.values()].slice(0,limit);const sql=neon(process.env.DATABASE_URL);const rows=await sql`select id,name,wallet_address,status,created_at from agents order by created_at desc limit ${Math.min(Math.max(limit,1),500)}`;return rows.map(r=>({id:r.id,name:r.name,walletAddress:r.wallet_address,status:r.status,createdAt:new Date(r.created_at).toISOString()}))}
+export async function savePayment(record: PaymentRecord): Promise<void> {
+  const db = await getD1();
+  if (db) {
+    const updatedAt = record.updatedAt || new Date().toISOString();
+    await db
+      .prepare(
+        `insert into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,block_height,block_hash,confirmations,merchant_id,agent_id,policy_id,service_quote_id,created_at,updated_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) on conflict(payment_id) do update set tx_hash=case when payments.status='settled' and excluded.status<>'reverted' then payments.tx_hash else excluded.tx_hash end,status=case when payments.status='settled' and excluded.status<>'reverted' then payments.status else excluded.status end,error=case when payments.status='settled' and excluded.status<>'reverted' then payments.error else excluded.error end,block_height=coalesce(excluded.block_height,payments.block_height),block_hash=coalesce(excluded.block_hash,payments.block_hash),confirmations=max(payments.confirmations,excluded.confirmations),updated_at=excluded.updated_at`,
+      )
+      .bind(
+        record.id,
+        record.paymentId,
+        record.fingerprint || `legacy:${record.paymentId}`,
+        record.nonce || record.paymentId,
+        record.txHash,
+        record.network,
+        record.payer,
+        record.payTo,
+        record.asset,
+        record.amount,
+        record.status,
+        record.error,
+        record.resourceHash || null,
+        record.source || "facilitator",
+        record.blockHeight ?? null,
+        record.blockHash || null,
+        record.confirmations || 0,
+        record.merchantId || null,
+        record.agentId || null,
+        record.policyId || null,
+        record.serviceQuoteId || null,
+        record.createdAt,
+        updatedAt,
+      )
+      .run();
+    return;
+  }
+  if (!process.env.DATABASE_URL) {
+    memory.set(record.paymentId, record);
+    return;
+  }
+  const sql = neon(process.env.DATABASE_URL);
+  await sql`insert into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,block_height,block_hash,confirmations,merchant_id,agent_id,policy_id,service_quote_id,created_at) values(${record.id},${record.paymentId},${record.fingerprint || null},${record.nonce || null},${record.txHash},${record.network},${record.payer},${record.payTo},${record.asset},${record.amount},${record.status},${record.error},${record.resourceHash || null},${record.source || "facilitator"},${record.blockHeight || null},${record.blockHash || null},${record.confirmations || 0},${record.merchantId || null},${record.agentId || null},${record.policyId || null},${record.serviceQuoteId || null},${record.createdAt}) on conflict(payment_id) do update set tx_hash=case when payments.status='settled' and excluded.status<>'reverted' then payments.tx_hash else excluded.tx_hash end,status=case when payments.status='settled' and excluded.status<>'reverted' then payments.status else excluded.status end,error=case when payments.status='settled' and excluded.status<>'reverted' then payments.error else excluded.error end,block_height=coalesce(excluded.block_height,payments.block_height),block_hash=coalesce(excluded.block_hash,payments.block_hash),confirmations=greatest(payments.confirmations,excluded.confirmations),updated_at=now()`;
+}
+
+export async function claimSettlement(
+  record: PaymentRecord,
+): Promise<{ claimed: boolean; existing: PaymentRecord | null }> {
+  const db = await getD1();
+  if (db) {
+    const now = Math.floor(Date.now() / 1000),
+      createdAt = record.createdAt,
+      updatedAt = record.updatedAt || createdAt;
+    const insert = db
+      .prepare(
+        `insert or ignore into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,block_height,block_hash,confirmations,merchant_id,agent_id,policy_id,service_quote_id,created_at,updated_at) select ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? where exists(select 1 from payment_challenges where nonce=? and consumed_by is null and expires_at>=?)`,
+      )
+      .bind(
+        record.id,
+        record.paymentId,
+        record.fingerprint || "",
+        record.nonce || "",
+        record.txHash,
+        record.network,
+        record.payer,
+        record.payTo,
+        record.asset,
+        record.amount,
+        record.status,
+        record.error,
+        record.resourceHash || null,
+        record.source || "facilitator",
+        record.blockHeight ?? null,
+        record.blockHash || null,
+        record.confirmations || 0,
+        record.merchantId || null,
+        record.agentId || null,
+        record.policyId || null,
+        record.serviceQuoteId || null,
+        createdAt,
+        updatedAt,
+        record.nonce || "",
+        now,
+      );
+    const link = db
+      .prepare(
+        `update payment_challenges set consumed_by=? where nonce=? and consumed_by is null and exists(select 1 from payments where payment_id=? and fingerprint=? and nonce=?)`,
+      )
+      .bind(
+        record.paymentId,
+        record.nonce || "",
+        record.paymentId,
+        record.fingerprint || "",
+        record.nonce || "",
+      );
+    const [inserted, linked] = await db.batch([insert, link]);
+    if (
+      (inserted.meta.changes || 0) === 1 &&
+      (linked.meta.changes || 0) === 1
+    ) {
+      return { claimed: true, existing: null };
+    }
+    const conflict = await findPayment(record.paymentId);
+    if (conflict) {
+      if (conflict.fingerprint !== record.fingerprint)
+        throw new Error("idempotency_conflict");
+      const challenge = await findChallenge(record.nonce || "");
+      if (challenge?.consumedBy !== record.paymentId)
+        throw new Error("challenge_link_failed");
+      return { claimed: false, existing: conflict };
+    }
+    throw new Error("nonce_reused");
+  }
+  if (!process.env.DATABASE_URL) {
+    const existing = memory.get(record.paymentId) || null;
+    if (existing) {
+      if (existing.fingerprint !== record.fingerprint)
+        throw new Error("idempotency_conflict");
+      return { claimed: false, existing };
+    }
+    const nonceKey = record.nonce || "";
+    if (usedNonces.has(nonceKey)) throw new Error("nonce_reused");
+    usedNonces.add(nonceKey);
+    memory.set(record.paymentId, record);
+    const challenge = memoryChallenges.get(nonceKey);
+    if (challenge)
+      memoryChallenges.set(nonceKey, {
+        ...challenge,
+        consumedBy: record.paymentId,
+      });
+    return { claimed: true, existing: null };
+  }
+  const sql = neon(process.env.DATABASE_URL);
+  const rows =
+    await sql`with claimed as (insert into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,merchant_id,agent_id,policy_id,service_quote_id,created_at) select ${record.id},${record.paymentId},${record.fingerprint},${record.nonce},${record.txHash},${record.network},${record.payer},${record.payTo},${record.asset},${record.amount},${record.status},null,${record.resourceHash || null},${record.source || "facilitator"},${record.merchantId || null},${record.agentId || null},${record.policyId || null},${record.serviceQuoteId || null},${record.createdAt} from payment_challenges where nonce=${record.nonce} and consumed_by is null and expires_at>=extract(epoch from now())::bigint on conflict do nothing returning payment_id) update payment_challenges set consumed_by=${record.paymentId} where nonce=${record.nonce} and exists(select 1 from claimed) returning consumed_by`;
+  if (rows.length) return { claimed: true, existing: null };
+  const existing = await findPayment(record.paymentId);
+  if (existing && existing.fingerprint !== record.fingerprint)
+    throw new Error("idempotency_conflict");
+  if (!existing) throw new Error("nonce_reused");
+  return { claimed: false, existing };
+}
+
+export async function resumeApprovedSettlement(
+  paymentId: string,
+  fingerprint: string,
+): Promise<boolean> {
+  const db = await getD1();
+  if (db) {
+    const result = await db
+      .prepare(
+        `update payments set status='settling',updated_at=? where payment_id=? and fingerprint=? and status='approval_required'`,
+      )
+      .bind(new Date().toISOString(), paymentId, fingerprint)
+      .run();
+    return (result.meta.changes || 0) === 1;
+  }
+  if (!process.env.DATABASE_URL) {
+    const record = memory.get(paymentId);
+    if (
+      !record ||
+      record.fingerprint !== fingerprint ||
+      record.status !== "approval_required"
+    )
+      return false;
+    memory.set(paymentId, { ...record, status: "settling" });
+    return true;
+  }
+  const sql = neon(process.env.DATABASE_URL);
+  const rows =
+    await sql`update payments set status='settling',updated_at=now() where payment_id=${paymentId} and fingerprint=${fingerprint} and status='approval_required' returning payment_id`;
+  return rows.length === 1;
+}
+export async function getPolicyUsage(
+  agentId: string,
+  now = new Date(),
+): Promise<{ daily: string; monthly: string }> {
+  const db = await getD1();
+  if (db) {
+    const month = now.toISOString().slice(0, 7),
+      day = now.toISOString().slice(0, 10),
+      rows = await db
+        .prepare(
+          `select amount,created_at from payments where agent_id=? and status in('settling','broadcast','settled') and substr(created_at,1,7)=?`,
+        )
+        .bind(agentId, month)
+        .all<{ amount: string; created_at: string }>();
+    let daily = 0n,
+      monthly = 0n;
+    for (const row of rows.results) {
+      const amount = BigInt(row.amount);
+      monthly += amount;
+      if (row.created_at.slice(0, 10) === day) daily += amount;
+    }
+    return { daily: String(daily), monthly: String(monthly) };
+  }
+  if (!process.env.DATABASE_URL) {
+    let daily = 0n,
+      monthly = 0n;
+    for (const p of memory.values())
+      if (p.status === "settled") {
+        const d = new Date(p.createdAt);
+        if (
+          d.getUTCFullYear() === now.getUTCFullYear() &&
+          d.getUTCMonth() === now.getUTCMonth()
+        ) {
+          monthly += BigInt(p.amount);
+          if (d.getUTCDate() === now.getUTCDate()) daily += BigInt(p.amount);
+        }
+      }
+    return { daily: String(daily), monthly: String(monthly) };
+  }
+  const sql = neon(process.env.DATABASE_URL);
+  const rows =
+    await sql`select coalesce(sum(amount) filter(where created_at>=date_trunc('day',now())),0)::text daily,coalesce(sum(amount) filter(where created_at>=date_trunc('month',now())),0)::text monthly from payments where agent_id=${agentId} and status='settled'`;
+  return {
+    daily: String(rows[0]?.daily || "0"),
+    monthly: String(rows[0]?.monthly || "0"),
+  };
+}
+export async function appendAudit(
+  actor: string,
+  action: string,
+  target: string,
+  metadata: Record<string, unknown> = {},
+) {
+  const db = await getD1();
+  if (db) {
+    await db
+      .prepare(
+        `insert into audit_log(id,actor,action,target,metadata_json,created_at) values(?,?,?,?,?,?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        actor,
+        action,
+        target,
+        JSON.stringify(metadata),
+        new Date().toISOString(),
+      )
+      .run();
+    return;
+  }
+  if (!process.env.DATABASE_URL) return;
+  const sql = neon(process.env.DATABASE_URL);
+  await sql`insert into audit_log(id,actor,action,target,metadata) values(${crypto.randomUUID()},${actor},${action},${target},${JSON.stringify(metadata)}::jsonb)`;
+}
+export async function getAgentPolicy(
+  agentId: string,
+): Promise<AgentPolicy | null> {
+  if (!process.env.DATABASE_URL)
+    return (
+      [...memoryPolicies.values()].find(
+        (p) => p.agentId === agentId && p.enabled,
+      ) || null
+    );
+  const sql = neon(process.env.DATABASE_URL);
+  const rows =
+    await sql`select * from agent_policies where agent_id=${agentId} and enabled=true order by created_at desc limit 1`;
+  if (!rows[0]) return null;
+  const r = rows[0];
+  return {
+    id: r.id,
+    agentId: r.agent_id,
+    enabled: r.enabled,
+    network: r.network,
+    allowedMerchants: r.allowed_merchants || [],
+    allowedRecipients: r.allowed_recipients || [],
+    allowedAssets: r.allowed_assets || [],
+    maxPerPayment: String(r.max_per_payment),
+    dailyBudget: String(r.daily_budget),
+    monthlyBudget: String(r.monthly_budget),
+    approvalThreshold: String(r.approval_threshold),
+    validFrom: new Date(r.valid_from).toISOString(),
+    validUntil: new Date(r.valid_until).toISOString(),
+    requireResourceBinding: r.require_resource_binding,
+  };
+}
+export async function hasApproval(paymentId: string): Promise<boolean> {
+  if (!process.env.DATABASE_URL)
+    return [...memoryApprovals.entries()].some(
+      ([key, value]) => key.startsWith(`${paymentId}:`) && value === "approved",
+    );
+  const sql = neon(process.env.DATABASE_URL);
+  const rows =
+    await sql`select 1 from payment_approvals where payment_id=${paymentId} and decision='approved' limit 1`;
+  return rows.length > 0;
+}
+export async function listPayments(limit = 100): Promise<PaymentRecord[]> {
+  const db = await getD1();
+  if (db) {
+    const rows = await db
+      .prepare(`select * from payments order by created_at desc limit ?`)
+      .bind(Math.min(Math.max(limit, 1), 500))
+      .all<D1PaymentRow>();
+    return rows.results.map(fromD1Payment);
+  }
+  if (!process.env.DATABASE_URL)
+    return [...memory.values()]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  const sql = neon(process.env.DATABASE_URL);
+  const rows =
+    await sql`select * from payments order by created_at desc limit ${Math.min(Math.max(limit, 1), 500)}`;
+  return rows.map((r) => ({
+    id: r.id,
+    paymentId: r.payment_id,
+    fingerprint: r.fingerprint || undefined,
+    nonce: r.nonce || undefined,
+    txHash: r.tx_hash,
+    network: r.network,
+    payer: r.payer,
+    payTo: r.pay_to,
+    asset: r.asset,
+    amount: String(r.amount),
+    status: r.status,
+    error: r.error,
+    resourceHash: r.resource_hash || undefined,
+    source: r.source || "facilitator",
+    blockHeight: r.block_height == null ? undefined : Number(r.block_height),
+    blockHash: r.block_hash || undefined,
+    confirmations: Number(r.confirmations || 0),
+    merchantId: r.merchant_id || undefined,
+    agentId: r.agent_id || undefined,
+    policyId: r.policy_id || undefined,
+    serviceQuoteId: r.service_quote_id || undefined,
+    createdAt: new Date(r.created_at).toISOString(),
+    updatedAt: new Date(r.updated_at).toISOString(),
+  }));
+}
+export async function findAuthorizedSettledPayment(
+  paymentId: string,
+  expectedResourceHash: string,
+): Promise<PaymentRecord | null> {
+  const payment = await findPayment(paymentId);
+  if (
+    !payment ||
+    payment.status !== "settled" ||
+    payment.source !== "facilitator" ||
+    payment.resourceHash !== expectedResourceHash ||
+    !payment.nonce
+  )
+    return null;
+  const challenge = await findChallenge(payment.nonce);
+  if (
+    !challenge ||
+    challenge.consumedBy !== payment.paymentId ||
+    challenge.resourceHash !== expectedResourceHash
+  )
+    return null;
+  const exact =
+    challenge.network === payment.network &&
+    challenge.asset === payment.asset &&
+    challenge.amount === payment.amount &&
+    challenge.payTo === payment.payTo;
+  const payerMatches =
+    !challenge.expectedPayer ||
+    (payment.network.startsWith("eip155:")
+      ? challenge.expectedPayer.toLowerCase() === payment.payer.toLowerCase()
+      : challenge.expectedPayer === payment.payer);
+  if (!exact || !payerMatches) return null;
+  return payment;
+}
+export async function upsertAgentPolicy(policy: AgentPolicy) {
+  if (!process.env.DATABASE_URL) {
+    memoryPolicies.set(policy.id, policy);
+    return;
+  }
+  const sql = neon(process.env.DATABASE_URL);
+  await sql`insert into agent_policies(id,agent_id,enabled,network,allowed_merchants,allowed_recipients,allowed_assets,max_per_payment,daily_budget,monthly_budget,approval_threshold,valid_from,valid_until,require_resource_binding) values(${policy.id},${policy.agentId},${policy.enabled},${policy.network},${policy.allowedMerchants},${policy.allowedRecipients},${policy.allowedAssets},${policy.maxPerPayment},${policy.dailyBudget},${policy.monthlyBudget},${policy.approvalThreshold},${policy.validFrom},${policy.validUntil},${policy.requireResourceBinding}) on conflict(id) do update set enabled=excluded.enabled,network=excluded.network,allowed_merchants=excluded.allowed_merchants,allowed_recipients=excluded.allowed_recipients,allowed_assets=excluded.allowed_assets,max_per_payment=excluded.max_per_payment,daily_budget=excluded.daily_budget,monthly_budget=excluded.monthly_budget,approval_threshold=excluded.approval_threshold,valid_from=excluded.valid_from,valid_until=excluded.valid_until,require_resource_binding=excluded.require_resource_binding,updated_at=now()`;
+}
+export async function recordApproval(
+  paymentId: string,
+  approver: string,
+  decision: "approved" | "rejected",
+  reason?: string,
+) {
+  if (!process.env.DATABASE_URL) {
+    memoryApprovals.set(`${paymentId}:${approver}`, decision);
+    return;
+  }
+  const sql = neon(process.env.DATABASE_URL);
+  await sql`insert into payment_approvals(id,payment_id,approver,decision,reason) values(${crypto.randomUUID()},${paymentId},${approver},${decision},${reason || null}) on conflict(payment_id,approver) do update set decision=excluded.decision,reason=excluded.reason,created_at=now()`;
+}
+export async function upsertAgent(agent: AgentRecord) {
+  if (!process.env.DATABASE_URL) {
+    memoryAgents.set(agent.id, agent);
+    return;
+  }
+  const sql = neon(process.env.DATABASE_URL);
+  await sql`insert into agents(id,name,wallet_address,status,created_at) values(${agent.id},${agent.name},${agent.walletAddress},${agent.status},${agent.createdAt}) on conflict(id) do update set name=excluded.name,wallet_address=excluded.wallet_address,status=excluded.status,updated_at=now()`;
+}
+export async function listAgents(limit = 100): Promise<AgentRecord[]> {
+  if (!process.env.DATABASE_URL)
+    return [...memoryAgents.values()].slice(0, limit);
+  const sql = neon(process.env.DATABASE_URL);
+  const rows =
+    await sql`select id,name,wallet_address,status,created_at from agents order by created_at desc limit ${Math.min(Math.max(limit, 1), 500)}`;
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    walletAddress: r.wallet_address,
+    status: r.status,
+    createdAt: new Date(r.created_at).toISOString(),
+  }));
+}

@@ -1,12 +1,175 @@
-import {PaymentRequirementsSchema} from "../../../lib/domain.ts";
-import {createGnoChallenge} from "../../../lib/challenge.ts";
-import {canonicalHash,evaluateServiceBudget} from "../../x402-core/src/index.ts";
-import {metrics} from "../../../lib/observability.ts";
-import type {AkashProvider,ChatRequest,ServiceQuote} from "./domain.ts";
-import {quoteInference} from "./pricing.ts";
-import {akashCircuit,selectProvider} from "./routing.ts";
-import {authorizeQuote,claimRequest,completeRequest,createQuote,failRequest,getQuote,getServiceBudget,getServiceUsage} from "./store.ts";
-import {G402SettlementAdapter} from "./settlement.ts";
-export async function offerInference(request:ChatRequest,resource:string,agentId?:string){const provider=selectProvider(request.model),price=quoteInference(request,provider),quote:ServiceQuote={id:crypto.randomUUID(),service:"akash-inference",agentId,requestHash:canonicalHash({request,agentId}),amount:price.paymentAmount,asset:process.env.GNO_ASSET||"gno.land/r/gnoland/wugnot",network:process.env.GNO_NETWORK_ID||"gno:pearl-1",providerId:provider.id,expiresAt:new Date(Date.now()+5*60_000).toISOString(),status:"offered"};if(agentId){const budget=await getServiceBudget(agentId,quote.service);if(!budget)throw new Error("akash_agent_budget_missing");const decision=evaluateServiceBudget(budget,quote.amount,await getServiceUsage(agentId,quote.service));if(!decision.allowed)throw new Error(decision.reason)}await createQuote(quote);const boundResource=`${resource}?quote=${quote.id}`,challenge=await createGnoChallenge(boundResource,"POST",{amount:quote.amount,description:`Akash inference quote ${quote.id}`,agentId,quoteId:quote.id});return {quote,challenge,estimate:price}}
-export async function executeInference(input:{request:ChatRequest;quoteId:string;paymentId:string;idempotencyKey:string;agentId?:string}){const quote=await getQuote(input.quoteId);if(!quote||quote.service!=="akash-inference")throw new Error("quote_not_found");if(new Date(quote.expiresAt)<new Date())throw new Error("quote_expired");if(quote.requestHash!==canonicalHash({request:input.request,agentId:input.agentId}))throw new Error("quote_request_mismatch");const settlement=await new G402SettlementAdapter().verify(input.paymentId,quote.id,quote.amount,input.agentId);if(!settlement.valid)throw new Error(settlement.reason);if(!await authorizeQuote(quote.id,input.paymentId))throw new Error("quote_already_used");const claim=await claimRequest(input.idempotencyKey,quote.id,input.agentId);if(!claim.claimed){if(claim.response)return claim.response;throw new Error("request_in_progress")}const provider=selectProvider(input.request.model);try{const response=await callProvider(provider,input.request),usage=(response as {usage?:{prompt_tokens?:number;completion_tokens?:number}}).usage||{},price=quoteInference({...input.request,max_tokens:usage.completion_tokens||input.request.max_tokens},provider);await completeRequest(input.idempotencyKey,{...quote,status:"authorized",paymentId:input.paymentId},provider.id,usage.prompt_tokens||price.inputTokens,usage.completion_tokens||0,price.paymentAmount,response);akashCircuit.success(provider.id);metrics.inc("akash_requests",{provider:provider.id,status:"success"});return response}catch(e){akashCircuit.failure(provider.id);await failRequest(input.idempotencyKey,e instanceof Error?e.message:String(e));metrics.inc("akash_requests",{provider:provider.id,status:"failed"});throw e}}
-async function callProvider(provider:AkashProvider,request:ChatRequest){if(process.env.AKASH_MOCK==="true")return {id:`chatcmpl_${crypto.randomUUID()}`,object:"chat.completion",created:Math.floor(Date.now()/1000),model:request.model,choices:[{index:0,message:{role:"assistant",content:"Akash staging mock response"},finish_reason:"stop"}],usage:{prompt_tokens:Math.ceil(JSON.stringify(request.messages).length/4),completion_tokens:5,total_tokens:Math.ceil(JSON.stringify(request.messages).length/4)+5}};const key=process.env[provider.apiKeyEnv];if(!key)throw new Error("akash_provider_key_missing");const response=await fetch(`${provider.baseUrl.replace(/\/$/,"")}/chat/completions`,{method:"POST",headers:{authorization:`Bearer ${key}`,"content-type":"application/json"},body:JSON.stringify(request),signal:AbortSignal.timeout(120_000)});if(!response.ok)throw new Error(`akash_provider_${response.status}`);return response.json()}
+import { PaymentRequirementsSchema } from "../../../lib/domain.ts";
+import { createGnoChallenge } from "../../../lib/challenge.ts";
+import {
+  canonicalHash,
+  evaluateServiceBudget,
+} from "../../x402-core/src/index.ts";
+import { metrics } from "../../../lib/observability.ts";
+import type { AkashProvider, ChatRequest, ServiceQuote } from "./domain.ts";
+import { quoteInference } from "./pricing.ts";
+import { akashCircuit, selectProvider } from "./routing.ts";
+import {
+  authorizeQuote,
+  claimRequest,
+  completeRequest,
+  createQuote,
+  failRequest,
+  getQuote,
+  getServiceBudget,
+  getServiceUsage,
+} from "./store.ts";
+import { G402SettlementAdapter } from "./settlement.ts";
+export async function offerInference(
+  request: ChatRequest,
+  resource: string,
+  agentId?: string,
+) {
+  const provider = selectProvider(request.model),
+    price = quoteInference(request, provider),
+    quote: ServiceQuote = {
+      id: crypto.randomUUID(),
+      service: "akash-inference",
+      agentId,
+      requestHash: canonicalHash({ request, agentId }),
+      amount: price.paymentAmount,
+      asset: process.env.GNO_ASSET || "gno.land/r/gnoland/wugnot",
+      network: process.env.GNO_NETWORK_ID || "gno:pearl-1",
+      providerId: provider.id,
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      status: "offered",
+    };
+  if (agentId) {
+    const budget = await getServiceBudget(agentId, quote.service);
+    if (!budget) throw new Error("akash_agent_budget_missing");
+    const decision = evaluateServiceBudget(
+      budget,
+      quote.amount,
+      await getServiceUsage(agentId, quote.service),
+    );
+    if (!decision.allowed) throw new Error(decision.reason);
+  }
+  await createQuote(quote);
+  const boundResource = `${resource}?quote=${quote.id}`,
+    challenge = await createGnoChallenge(boundResource, "POST", {
+      amount: quote.amount,
+      description: `Akash inference quote ${quote.id}`,
+      agentId,
+      quoteId: quote.id,
+    });
+  return { quote, challenge, estimate: price };
+}
+export async function executeInference(input: {
+  request: ChatRequest;
+  quoteId: string;
+  paymentId: string;
+  idempotencyKey: string;
+  agentId?: string;
+}) {
+  const quote = await getQuote(input.quoteId);
+  if (!quote || quote.service !== "akash-inference")
+    throw new Error("quote_not_found");
+  if (new Date(quote.expiresAt) < new Date()) throw new Error("quote_expired");
+  if (
+    quote.requestHash !==
+    canonicalHash({ request: input.request, agentId: input.agentId })
+  )
+    throw new Error("quote_request_mismatch");
+  const settlement = await new G402SettlementAdapter().verify(input.paymentId, {
+    quoteId: quote.id,
+    network: quote.network,
+    asset: quote.asset,
+    amount: quote.amount,
+    payTo: process.env.G402_MERCHANT_ADDRESS || "",
+    agentId: input.agentId,
+  });
+  if (!settlement.valid) throw new Error(settlement.reason);
+  if (!(await authorizeQuote(quote.id, input.paymentId)))
+    throw new Error("quote_already_used");
+  const claim = await claimRequest(
+    input.idempotencyKey,
+    quote.id,
+    input.agentId,
+  );
+  if (!claim.claimed) {
+    if (claim.response) return claim.response;
+    throw new Error("request_in_progress");
+  }
+  const provider = selectProvider(input.request.model);
+  try {
+    const response = await callProvider(provider, input.request),
+      usage =
+        (
+          response as {
+            usage?: { prompt_tokens?: number; completion_tokens?: number };
+          }
+        ).usage || {},
+      price = quoteInference(
+        {
+          ...input.request,
+          max_tokens: usage.completion_tokens || input.request.max_tokens,
+        },
+        provider,
+      );
+    await completeRequest(
+      input.idempotencyKey,
+      { ...quote, status: "authorized", paymentId: input.paymentId },
+      provider.id,
+      usage.prompt_tokens || price.inputTokens,
+      usage.completion_tokens || 0,
+      price.paymentAmount,
+      response,
+    );
+    akashCircuit.success(provider.id);
+    metrics.inc("akash_requests", { provider: provider.id, status: "success" });
+    return response;
+  } catch (e) {
+    akashCircuit.failure(provider.id);
+    await failRequest(
+      input.idempotencyKey,
+      e instanceof Error ? e.message : String(e),
+    );
+    metrics.inc("akash_requests", { provider: provider.id, status: "failed" });
+    throw e;
+  }
+}
+async function callProvider(provider: AkashProvider, request: ChatRequest) {
+  if (process.env.AKASH_MOCK === "true")
+    return {
+      id: `chatcmpl_${crypto.randomUUID()}`,
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model: request.model,
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: "Akash staging mock response",
+          },
+          finish_reason: "stop",
+        },
+      ],
+      usage: {
+        prompt_tokens: Math.ceil(JSON.stringify(request.messages).length / 4),
+        completion_tokens: 5,
+        total_tokens:
+          Math.ceil(JSON.stringify(request.messages).length / 4) + 5,
+      },
+    };
+  const key = process.env[provider.apiKeyEnv];
+  if (!key) throw new Error("akash_provider_key_missing");
+  const response = await fetch(
+    `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(120_000),
+    },
+  );
+  if (!response.ok) throw new Error(`akash_provider_${response.status}`);
+  return response.json();
+}

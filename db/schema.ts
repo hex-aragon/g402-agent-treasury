@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const paymentChallenges = sqliteTable("payment_challenges", {
@@ -47,7 +48,13 @@ export const payments = sqliteTable("payments", {
   uniqueIndex("payments_payment_id_unique").on(table.paymentId),
   uniqueIndex("payments_fingerprint_unique").on(table.fingerprint),
   uniqueIndex("payments_nonce_unique").on(table.network, table.payer, table.nonce),
+  uniqueIndex("payments_facilitator_challenge_unique").on(table.nonce).where(sql`${table.source} = 'facilitator'`),
+  uniqueIndex("payments_facilitator_network_tx_unique")
+    .on(table.network, table.txHash)
+    .where(sql`${table.source} = 'facilitator' AND ${table.txHash} IS NOT NULL`),
   index("payments_tx_hash_idx").on(table.txHash),
+  index("payments_network_tx_idx").on(table.network, table.txHash),
+  index("payments_network_asset_created_idx").on(table.network, table.asset, table.createdAt),
   index("payments_created_at_idx").on(table.createdAt),
 ]);
 

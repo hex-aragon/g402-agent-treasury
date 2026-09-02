@@ -8,7 +8,7 @@ For realm mode, first run `gno fmt`, `gno lint` and `gno test` using the officia
 
 ## Emergency stop
 
-Set G402_ENABLE_SETTLEMENT=false, redeploy, verify health and leave verification/explorer online. Record actor and incident ID. Do not delete rows. Reconcile transactions already accepted by an RPC by hash.
+`G402_ENABLE_SETTLEMENT=false` stops the native Gno broadcaster only. To stop new v2 EVM/Solana challenge and settlement requests, set `FACILITATOR_PUBLIC=false` and redeploy with no public API key; use a separately controlled bearer key only if recovery access is required. Verify health, record the actor and incident ID, and do not delete rows.
 
 If the on-chain realm is suspected, also set `G402_PAYMENT_MODE=direct`, keep settlement disabled, and reconcile every `G402Payment` event against merchant balance changes before recovery. A deployed realm is immutable; a contract defect requires a new package path and explicit configuration change.
 
@@ -27,8 +27,10 @@ Page on settlement failure spikes, indexer lag above 20 blocks, any reorg, datab
 Stop settlement if a reorg exceeds the configured maximum depth. Scan locates a common ancestor, preserves orphaned blocks as non-canonical, marks affected payments reverted and replays. Never manually advance checkpoints.
 
 - approval_required: confirm approver and fingerprint, then approve. Retry atomically moves to settling.
-- settling: search logs and mempool by payment memo. Do not rebroadcast until absence is proven.
-- broadcast: wait for confirmation target; reconcile hash after SLO.
+- Gno settling: search logs and mempool by payment memo. Do not rebroadcast until absence is proven under the native Gno procedure.
+- v2 settling/broadcast with transaction hash: resend only the identical settlement request to trigger read-only EVM/Solana chain reconciliation. The handler must not call facilitator settlement again.
+- v2 settling/broadcast without transaction hash: treat as manual pending. Search facilitator and chain records using the server-issued payment/challenge IDs, but do not automatically re-submit.
+- v2 known transaction: EVM reconciliation requires a finalized receipt, exact EIP-3009 call and Transfer log; Solana requires finalized status and the latest review-time message hash.
 - reverted: deny resource access and investigate; do not auto-refund before canonical ownership is confirmed.
 
 ## D1 recovery
@@ -45,4 +47,4 @@ Export or back up D1 according to the hosting plan and test restore procedures. 
 
 ## Mainnet unlock
 
-Mainnet unlock is outside this release. It requires a live Adena Pearl vector against the pinned official codec, two RPCs, external review, load/reorg tests and two-person approval. Both flags remain independently controlled.
+Mainnet unlock is outside this release. Ethereum and Solana each require their family-specific allow and settlement flags, verified merchant configuration, production facilitator support, reconciliation RPCs, external review, limits, and two-person approval. Gno separately requires its allow/settlement flags, explicit mainnet chain configuration, a live Adena acceptance vector, redundant RPC review, and the same operational gates.

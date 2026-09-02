@@ -1,85 +1,124 @@
 # Devpost submission draft
 
+This file is submission copy in progress. Do not turn unchecked evidence into a public claim.
+
 ## Project name
 
-**g402 Agent Treasury — Human-approved payments for AI agents**
+**x402 Agent Gateways — Human-approved multichain payments for AI agents**
 
 ## One-line description
 
-An AI agent uses WebMCP to inspect, prepare and verify a real GnoLand Pearl x402 payment while a human keeps custody and approves the exact Adena transaction.
+A WebMCP payment workspace where agents prepare exact EVM, Solana, or Gno testnet terms and people retain custody and approve the matching wallet transaction.
 
 ## Why this is a strong fit for WebMCP
 
-Payments are a coordination problem between machine speed and human authority. A browser agent can understand a payment goal, but visual automation is brittle and giving the agent a wallet key is unsafe. g402 Agent Treasury exposes the existing facilitator and explorer as five narrow WebMCP tools. The agent reads live status, searches canonical activity, prepares fixed testnet terms, moves the shared UI to review and checks the final receipt. The human sees the same state and remains the only party able to sign in Adena.
+Payments are a coordination problem between machine speed and human authority. An agent can identify a service and prepare protocol details, but visual wallet automation is brittle and custody delegation is risky. x402 Agent Gateways exposes the workflow as seven narrow WebMCP tools: discover rails, prepare server-bound testnet terms, inspect the native Gno gateway, search Pearl activity, open human review, and verify a durable receipt.
+
+The agent handles structured work without screen scraping. The person sees the exact challenge that the agent prepared and remains the only party able to approve the wallet. Mainnet configuration, merchant recipients, signed payload submission, and settlement internals are outside the WebMCP surface.
 
 ## How it creates a better user experience
 
-The person no longer has to move between an operations console, chain explorer, payment API documentation and wallet while copying addresses and transaction identifiers. The agent completes the structured research and preparation in seconds. The application then pauses at the consequential boundary, shows the exact network, amount and recipient, and asks the person to approve the wallet signature. Both participants share a visible activity trail and the final durable receipt.
+One workspace replaces manual copying between API docs, chain dashboards, wallet screens, and receipt tables. The agent selects the right adapter and prepares a short-lived challenge. The application pauses at the consequential boundary, shows network, asset, amount, recipient, payer, resource, and expiry, and revalidates them with the server immediately before opening the wallet prompt.
+
+EVM users get an EIP-1193/EIP-712 flow built from official x402 EVM definitions, Solana users get Wallet Standard and a v0 transaction built by the official SVM Exact client, and Gno users retain Adena. The interaction changes with the chain, but the agent-facing preparation and receipt model stays consistent.
 
 ## What people and agents can do together that was difficult before
 
-The agent can verify the live safety configuration, find relevant chain records and prepare a valid short-lived x402 challenge without screen scraping. The person can inspect exactly what the agent prepared and authorize it without sharing custody. After settlement, the agent can retrieve one precise receipt and explain the result. Previously this required manual API calls, explorer searches and copy/paste across several screens, or unsafe custody delegation.
+The agent can inspect five precise rail definitions, distinguish testnet-ready adapters from independently locked mainnets, and produce wallet-bound payment terms. The person can inspect and authorize those terms without sharing a key. After settlement, both can refer to one payment ID and one durable record rather than reconcile copied transaction details.
+
+This shared challenge is the important collaboration primitive: neither participant silently reconstructs or changes the other's terms.
 
 ## How WebMCP was implemented
 
-The top-level React layout registers five imperative tools with `document.modelContext.registerTool`. Each tool has a strict JSON Schema, accurate read-only and untrusted-content annotations, bounded output, cancellation support and structured errors. The execute handlers reuse same-origin production APIs and their server validation and applicable rate limits. An AbortController owns registration cleanup. The prepare and review steps update session-scoped shared UI state, and the wallet consumes the exact prepared challenge rather than issuing replacement terms.
+The top-level React layout registers seven imperative tools with `document.modelContext.registerTool`. Each tool has a strict JSON Schema, bounded output, cancellation support, and annotations that distinguish read-only results from state-changing preparation/navigation. An `AbortController` removes stale registrations.
 
-Before the WebMCP path can request Adena approval, it verifies a healthy Pearl deployment, a literal mainnet lock, direct WUGNOT mode, self-test, an exact 1,000 amount, self-recipient and a fixed same-origin paid resource. The server then revalidates the issued challenge, signed transaction, nonce, expiry and resource binding before settlement. Gno mainnet remains locked independently in deployment and server configuration.
+`list_payment_rails` and `prepare_agent_payment` add the chain-neutral path. Preparation accepts Base Sepolia, Solana Devnet, or Gno Pearl only. It calls same-origin APIs, persists exact server-issued terms to a shared session, and never signs or settles. `open_payment_review` consumes those same terms in the matching wallet UI.
+
+For EVM and Solana, `POST /api/v2/challenges` is a wallet-bound `Payment-Required` preflight. The server generates the challenge ID, payment ID, and EVM authorization nonce where applicable; stores the expected payer, resource, requirements hash, expected payment ID, and Solana unsigned-message hash; and requires the client to echo them unchanged. `/api/v2/review` rechecks the terms immediately before the wallet prompt. For Solana it then uses the official SVM Exact client to refresh the blockhash, atomically replaces the stored message hash, and returns the only payload the wallet may sign.
+
+Verify and settle repeat the checks and use the official x402 HTTP facilitator client. The EVM browser constructs its EIP-3009 payload with viem/EIP-1193 using official x402 authorization types and asset metadata rather than an all-in-one SDK checkout helper. Settlement atomically claims the server-issued IDs and rejects an inconsistent success tuple. A retry with a known transaction hash performs finalized EVM/Solana RPC reconciliation without calling settlement again; a transaction-less unknown outcome remains manual pending. The protected resource unlocks only for the exact durable settled record.
+
+Gno Pearl remains a native v1 adapter using Adena/TM2 direct WUGNOT verification and broadcast. Its optional `g402pay` realm is not deployed.
+
+## Chain support and evidence
+
+| Rail             | Implemented experience                                         | Evidence available now                                                                                        |
+| ---------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Base Sepolia     | EIP-1193, EIP-712/EIP-3009 USDC, v2 facilitator                | Deterministic SDK and mocked-facilitator tests; live wallet settlement still required                         |
+| Solana Devnet    | Wallet Standard, SPL USDC, v0 transaction, sponsored fee payer | Deterministic SDK and mocked-facilitator tests; live wallet settlement and recipient ATA check still required |
+| Gno Pearl        | Adena, native direct WUGNOT v1, Scan receipt                   | Existing native implementation; manual acceptance must be reconfirmed on the release build                    |
+| Ethereum mainnet | v2 adapter path                                                | Locked behind two gates, merchant recipient, and production facilitator support                               |
+| Solana mainnet   | v2 adapter path                                                | Locked behind two gates, merchant recipient/ATA, HTTPS RPC, and production facilitator support                |
+
+Do not describe SDK/mock evidence as a live transfer or independent finality proof.
 
 ## What already existed vs. challenge work
 
 ### Pre-existing foundation
 
-- GnoLand Pearl x402 facilitator
-- Adena `SignTx` verification and direct WUGNOT settlement
-- Cloudflare D1 challenge, nonce and receipt persistence
-- canonical Scan with reorg handling
+- Gno Pearl facilitator and Adena direct-WUGNOT flow
+- D1 challenge, nonce, payment, audit, and rate-limit persistence
+- Pearl Scan with reorg-aware canonical history
 - paid sample API and operations console
-- source-complete but undeployed `g402pay` realm
+- source- and test-complete but undeployed `g402pay` realm
+- separately gated Akash, Filecoin/IPFS, and Cosmos packages
 
-### Added for the WebMCP Challenge on September 2, 2026
+### Added for the WebMCP Challenge
 
-- five top-level WebMCP tools
-- agent payment workspace and shared activity trail
-- exact agent-prepared challenge handoff to human wallet approval
-- WebMCP-specific fail-closed policy and output minimization
-- exact receipt query
-- dedicated tool, tampering and unsafe-configuration tests
-- challenge documentation and demo flow
+- seven top-level WebMCP tools and shared activity/preparation state
+- chain-neutral rail registry for EVM, Solana, and Gno
+- official x402 v2 types, HTTP facilitator client, EVM definitions, and SVM Exact payload builder integrated with the chain-neutral adapter
+- EIP-1193 and Wallet Standard human review UI
+- wallet-bound `Payment-Required` preflight and pre-sign server review
+- expected-payer, resource, recipient, amount, asset, unsigned-payload, and settlement-response binding
+- server-issued payment ID/nonce binding, review-time Solana blockhash refresh, known-transaction reconciliation, transaction-less manual pending, and exact paid-resource authorization
+- independently gated Ethereum and Solana mainnet adapter paths
+- deterministic SDK, mocked-facilitator, tamper, replay, and WebMCP safety coverage
 
-## Demo video script — target 2:35
+## Demo video plan — target 2:40
 
-**0:00–0:12 — Result first**
-Show the agent calling the receipt tool and the settled Pearl transaction beside the visible receipt. Say: “This payment was prepared by an AI agent, approved by me in Adena, settled on GnoLand Pearl, and verified through WebMCP.”
+Record only after at least one real testnet wallet acceptance succeeds on the release deployment.
 
-**0:12–0:32 — Product and safety boundary**
-Open `/webmcp`. Show five registered Site tools and the empty prepared card. Explain that the agent can inspect, search, prepare, navigate and verify, but cannot sign. Point to “Mainnet locked.”
+**0:00–0:15 — Result first**
+Show one completed testnet payment, the paid weather response, and the exact receipt tool result. Identify the chain actually shown; do not imply the other rails were live-settled.
 
-**0:32–0:55 — Inspect and search**
-Ask: “Check gateway health and mainnet lock, then show recent Pearl activity.” Show the actual WebMCP calls and the shared activity trail updating.
+**0:15–0:38 — Rail discovery**
+Open `/webmcp` and ask the agent to list rails. Show Base Sepolia and Solana Devnet as SDK-ready, Gno Pearl as native, and both mainnets as locked.
 
-**0:55–1:25 — Prepare**
-Provide the Pearl Adena address and ask the agent to prepare a 1,000 WUGNOT self-payment. Show the prepared card appear with Pearl, amount, recipient and `Not submitted`. Emphasize that no wallet has opened and no transfer occurred.
+**0:38–1:05 — Agent preparation**
+Give the agent the relevant wallet address and ask it to prepare the testnet payment. Show the wallet-bound terms appear without a signature prompt.
 
-**1:25–1:55 — Human approval**
-Let the agent open the review screen. Connect Adena, compare the displayed address and amount, click the review/sign button and approve the Adena prompt. Keep the approval moment visible.
+**1:05–1:40 — Human approval**
+Let the agent open review. Connect the matching wallet, compare network, amount, recipient, and resource, then show the human approval. Mention that the server performed the pre-sign review.
 
-**1:55–2:20 — Verify**
-Show successful paid-data retrieval and payment ID. Ask the agent to verify it. Show status, transaction hash, block and confirmations, then open Scan briefly.
+**1:40–2:05 — Settlement and receipt**
+Show the paid resource retry and ask the agent to retrieve the exact payment ID. Show the returned status and transaction identifier.
 
-**2:20–2:35 — Close**
-Say: “WebMCP handles reliable preparation and verification. The human keeps custody and final authority. All live transfers are limited to Pearl testnet.”
+**2:05–2:25 — Second family and Gno**
+Prepare, but do not falsely settle, the other SDK rail. Briefly show that Gno routes to Adena and retains Scan.
+
+**2:25–2:40 — Close**
+Say: “Agents handle discovery and exact preparation. People keep custody and final approval. Mainnet remains independently locked.”
 
 ## Final submission checklist
 
-- [x] Working application and HTTPS URL
-- [x] Imperative WebMCP implementation in the top-level page
-- [x] Source code, setup instructions and root `LICENSE`
-- [x] Clear distinction between pre-existing and challenge work
-- [ ] Public GitHub, GitLab or Bitbucket repository URL
-- [ ] Public YouTube demo under three minutes with audio
-- [ ] Test five tools in ChatGPT's in-app browser
-- [ ] Complete one human-approved Adena Pearl transaction and verify its receipt
-- [ ] Ensure judges can access the live deployment
+- [x] Application implementation and HTTPS deployment URL exist
+- [x] Seven imperative WebMCP tools are implemented
+- [x] Root `LICENSE` and local setup instructions exist
+- [x] Gno pre-existing work is separated from challenge additions
+- [ ] Re-run every automated gate on the exact submitted commit and record results
+- [ ] Complete and record a real Base Sepolia EIP-1193 settlement
+- [ ] Complete and record a real Solana Devnet Wallet Standard settlement after recipient ATA verification
+- [ ] Reconfirm the Adena Pearl path on the exact release build
+- [ ] Test all seven tools in ChatGPT's in-app browser
+- [ ] Publish the GitHub, GitLab, or Bitbucket repository and place its URL here
+- [ ] Publish a public YouTube demo under three minutes with audio and place its URL here
+- [ ] Grant and verify judge access from a non-owner session
+- [ ] Confirm every mainnet gate is false in the submitted deployment
 
-Do not describe the `g402pay` realm as deployed. The live path is Pearl testnet direct WUGNOT transfer.
+**Repository URL:** pending
+
+**Demo video URL:** pending
+**Judge-access verification:** pending
+
+Do not describe `g402pay` as deployed, EVM/Solana automated tests as live transactions, every runtime path as an all-in-one SDK helper, or unreconciled facilitator settlement records as independent chain-finality proofs.

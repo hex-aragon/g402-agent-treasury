@@ -1,12 +1,191 @@
-import {PaymentRequirementsSchema} from "../../../lib/domain.ts";
-import {createGnoChallenge} from "../../../lib/challenge.ts";
-import {canonicalHash,evaluateServiceBudget} from "../../x402-core/src/index.ts";
-import type {DeploymentRequest,ServiceQuote} from "./domain.ts";
-import {quoteDeployment} from "./pricing.ts";
-import {authorizeQuote,claimRequest,completeRequest,createQuote,failRequest,getQuote,getServiceBudget,getServiceUsage,saveDeployment} from "./store.ts";
-import {G402SettlementAdapter} from "./settlement.ts";
-function assertImageAllowed(image:string){const allowed=(process.env.AKASH_IMAGE_ALLOWLIST||"ghcr.io/,docker.io/library/").split(",").filter(Boolean);if(!allowed.some(prefix=>image.startsWith(prefix)))throw new Error("image_not_allowed")}
-export async function offerDeployment(request:DeploymentRequest,resource:string,agentId?:string){assertImageAllowed(request.image);const price=quoteDeployment(request),quote:ServiceQuote={id:crypto.randomUUID(),service:"akash-deployment",agentId,requestHash:canonicalHash({request,agentId}),amount:price.paymentAmount,asset:process.env.GNO_ASSET||"gno.land/r/gnoland/wugnot",network:process.env.GNO_NETWORK_ID||"gno:pearl-1",providerId:"akash-console",expiresAt:new Date(Date.now()+10*60_000).toISOString(),status:"offered"};if(agentId){const budget=await getServiceBudget(agentId,quote.service);if(!budget)throw new Error("akash_agent_budget_missing");const decision=evaluateServiceBudget(budget,quote.amount,await getServiceUsage(agentId,quote.service));if(!decision.allowed)throw new Error(decision.reason)}await createQuote(quote);const bound=`${resource}?quote=${quote.id}`,challenge=await createGnoChallenge(bound,"POST",{amount:quote.amount,description:`Akash deployment quote ${quote.id}`,agentId,quoteId:quote.id});return {quote,challenge,estimate:price}}
-export async function executeDeployment(input:{request:DeploymentRequest;quoteId:string;paymentId:string;idempotencyKey:string;agentId?:string}){const quote=await getQuote(input.quoteId);if(!quote||quote.service!=="akash-deployment")throw new Error("quote_not_found");if(quote.requestHash!==canonicalHash({request:input.request,agentId:input.agentId}))throw new Error("quote_request_mismatch");const settlement=await new G402SettlementAdapter().verify(input.paymentId,quote.id,quote.amount,input.agentId);if(!settlement.valid)throw new Error(settlement.reason);if(!await authorizeQuote(quote.id,input.paymentId))throw new Error("quote_already_used");const claim=await claimRequest(input.idempotencyKey,quote.id,input.agentId,"deployment");if(!claim.claimed){if(claim.response)return claim.response;throw new Error("request_in_progress")}const deploymentId=crypto.randomUUID(),closeAfter=new Date(Date.now()+input.request.maxHours*3600_000).toISOString();try{const result=await createAkashDeployment(input.request);await saveDeployment({id:deploymentId,agentId:input.agentId,quoteId:quote.id,externalId:result.externalId,providerId:result.providerId,image:input.request.image,cpuMillis:input.request.cpuMillis,memoryMiB:input.request.memoryMiB,gpuModel:input.request.gpu?.model,gpuUnits:input.request.gpu?.units||0,maxHours:input.request.maxHours,status:result.status,closeAfter});const response={id:deploymentId,object:"akash.deployment",status:result.status,external_id:result.externalId,provider:result.providerId,close_after:closeAfter};await completeRequest(input.idempotencyKey,{...quote,status:"authorized",paymentId:input.paymentId},result.providerId,0,input.request.maxHours,quote.amount,response);return response}catch(e){await failRequest(input.idempotencyKey,e instanceof Error?e.message:String(e));throw e}}
-async function createAkashDeployment(request:DeploymentRequest){if(process.env.AKASH_MOCK==="true")return {externalId:`dseq-${Date.now()}`,providerId:"akash-mock-provider",status:"active"};if(process.env.AKASH_ENABLE_DEPLOYMENTS!=="true"||process.env.AKASH_ALLOW_MAINNET!=="true")throw new Error("akash_deployment_locked");const key=process.env.AKASH_CONSOLE_API_KEY;if(!key)throw new Error("akash_console_key_missing");const sdl=buildSDL(request),response=await fetch(`${process.env.AKASH_CONSOLE_URL||"https://console-api.akash.network"}/v1/deployments`,{method:"POST",headers:{"x-api-key":key,"content-type":"application/json"},body:JSON.stringify({sdl}),signal:AbortSignal.timeout(60_000)});if(!response.ok)throw new Error(`akash_console_${response.status}`);const body=await response.json() as {dseq?:string|number};if(!body.dseq)throw new Error("akash_dseq_missing");return {externalId:String(body.dseq),providerId:"pending-bid",status:"creating"}}
-export function buildSDL(r:DeploymentRequest){const env=Object.entries(r.env).map(([k,v])=>`${k}=${v}`),gpu=r.gpu?`\n        gpu:\n          units: ${r.gpu.units}\n          attributes:\n            vendor:\n              nvidia:\n                - model: ${r.gpu.model}`:"";return `version: "2.0"\nservices:\n  workload:\n    image: ${JSON.stringify(r.image)}\n    command: ${JSON.stringify(r.command)}\n    env: ${JSON.stringify(env)}\n    expose:\n      - port: 8080\n        as: 80\n        to:\n          - global: true\nprofiles:\n  compute:\n    workload:\n      resources:\n        cpu:\n          units: ${r.cpuMillis/1000}\n        memory:\n          size: ${r.memoryMiB}Mi\n        storage:\n          size: ${r.storageMiB}Mi${gpu}\n  placement:\n    akash:\n      pricing:\n        workload:\n          denom: uact\n          amount: 1000000\ndeployment:\n  workload:\n    akash:\n      profile: workload\n      count: 1\n`}
+import { PaymentRequirementsSchema } from "../../../lib/domain.ts";
+import { createGnoChallenge } from "../../../lib/challenge.ts";
+import {
+  canonicalHash,
+  evaluateServiceBudget,
+} from "../../x402-core/src/index.ts";
+import type { DeploymentRequest, ServiceQuote } from "./domain.ts";
+import { quoteDeployment } from "./pricing.ts";
+import {
+  authorizeQuote,
+  claimRequest,
+  completeRequest,
+  createQuote,
+  failRequest,
+  getQuote,
+  getServiceBudget,
+  getServiceUsage,
+  saveDeployment,
+} from "./store.ts";
+import { G402SettlementAdapter } from "./settlement.ts";
+function assertImageAllowed(image: string) {
+  const allowed = (
+    process.env.AKASH_IMAGE_ALLOWLIST || "ghcr.io/,docker.io/library/"
+  )
+    .split(",")
+    .filter(Boolean);
+  if (!allowed.some((prefix) => image.startsWith(prefix)))
+    throw new Error("image_not_allowed");
+}
+export async function offerDeployment(
+  request: DeploymentRequest,
+  resource: string,
+  agentId?: string,
+) {
+  assertImageAllowed(request.image);
+  const price = quoteDeployment(request),
+    quote: ServiceQuote = {
+      id: crypto.randomUUID(),
+      service: "akash-deployment",
+      agentId,
+      requestHash: canonicalHash({ request, agentId }),
+      amount: price.paymentAmount,
+      asset: process.env.GNO_ASSET || "gno.land/r/gnoland/wugnot",
+      network: process.env.GNO_NETWORK_ID || "gno:pearl-1",
+      providerId: "akash-console",
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      status: "offered",
+    };
+  if (agentId) {
+    const budget = await getServiceBudget(agentId, quote.service);
+    if (!budget) throw new Error("akash_agent_budget_missing");
+    const decision = evaluateServiceBudget(
+      budget,
+      quote.amount,
+      await getServiceUsage(agentId, quote.service),
+    );
+    if (!decision.allowed) throw new Error(decision.reason);
+  }
+  await createQuote(quote);
+  const bound = `${resource}?quote=${quote.id}`,
+    challenge = await createGnoChallenge(bound, "POST", {
+      amount: quote.amount,
+      description: `Akash deployment quote ${quote.id}`,
+      agentId,
+      quoteId: quote.id,
+    });
+  return { quote, challenge, estimate: price };
+}
+export async function executeDeployment(input: {
+  request: DeploymentRequest;
+  quoteId: string;
+  paymentId: string;
+  idempotencyKey: string;
+  agentId?: string;
+}) {
+  const quote = await getQuote(input.quoteId);
+  if (!quote || quote.service !== "akash-deployment")
+    throw new Error("quote_not_found");
+  if (
+    quote.requestHash !==
+    canonicalHash({ request: input.request, agentId: input.agentId })
+  )
+    throw new Error("quote_request_mismatch");
+  const settlement = await new G402SettlementAdapter().verify(input.paymentId, {
+    quoteId: quote.id,
+    network: quote.network,
+    asset: quote.asset,
+    amount: quote.amount,
+    payTo: process.env.G402_MERCHANT_ADDRESS || "",
+    agentId: input.agentId,
+  });
+  if (!settlement.valid) throw new Error(settlement.reason);
+  if (!(await authorizeQuote(quote.id, input.paymentId)))
+    throw new Error("quote_already_used");
+  const claim = await claimRequest(
+    input.idempotencyKey,
+    quote.id,
+    input.agentId,
+    "deployment",
+  );
+  if (!claim.claimed) {
+    if (claim.response) return claim.response;
+    throw new Error("request_in_progress");
+  }
+  const deploymentId = crypto.randomUUID(),
+    closeAfter = new Date(
+      Date.now() + input.request.maxHours * 3600_000,
+    ).toISOString();
+  try {
+    const result = await createAkashDeployment(input.request);
+    await saveDeployment({
+      id: deploymentId,
+      agentId: input.agentId,
+      quoteId: quote.id,
+      externalId: result.externalId,
+      providerId: result.providerId,
+      image: input.request.image,
+      cpuMillis: input.request.cpuMillis,
+      memoryMiB: input.request.memoryMiB,
+      gpuModel: input.request.gpu?.model,
+      gpuUnits: input.request.gpu?.units || 0,
+      maxHours: input.request.maxHours,
+      status: result.status,
+      closeAfter,
+    });
+    const response = {
+      id: deploymentId,
+      object: "akash.deployment",
+      status: result.status,
+      external_id: result.externalId,
+      provider: result.providerId,
+      close_after: closeAfter,
+    };
+    await completeRequest(
+      input.idempotencyKey,
+      { ...quote, status: "authorized", paymentId: input.paymentId },
+      result.providerId,
+      0,
+      input.request.maxHours,
+      quote.amount,
+      response,
+    );
+    return response;
+  } catch (e) {
+    await failRequest(
+      input.idempotencyKey,
+      e instanceof Error ? e.message : String(e),
+    );
+    throw e;
+  }
+}
+async function createAkashDeployment(request: DeploymentRequest) {
+  if (process.env.AKASH_MOCK === "true")
+    return {
+      externalId: `dseq-${Date.now()}`,
+      providerId: "akash-mock-provider",
+      status: "active",
+    };
+  if (
+    process.env.AKASH_ENABLE_DEPLOYMENTS !== "true" ||
+    process.env.AKASH_ALLOW_MAINNET !== "true"
+  )
+    throw new Error("akash_deployment_locked");
+  const key = process.env.AKASH_CONSOLE_API_KEY;
+  if (!key) throw new Error("akash_console_key_missing");
+  const sdl = buildSDL(request),
+    response = await fetch(
+      `${process.env.AKASH_CONSOLE_URL || "https://console-api.akash.network"}/v1/deployments`,
+      {
+        method: "POST",
+        headers: { "x-api-key": key, "content-type": "application/json" },
+        body: JSON.stringify({ sdl }),
+        signal: AbortSignal.timeout(60_000),
+      },
+    );
+  if (!response.ok) throw new Error(`akash_console_${response.status}`);
+  const body = (await response.json()) as { dseq?: string | number };
+  if (!body.dseq) throw new Error("akash_dseq_missing");
+  return {
+    externalId: String(body.dseq),
+    providerId: "pending-bid",
+    status: "creating",
+  };
+}
+export function buildSDL(r: DeploymentRequest) {
+  const env = Object.entries(r.env).map(([k, v]) => `${k}=${v}`),
+    gpu = r.gpu
+      ? `\n        gpu:\n          units: ${r.gpu.units}\n          attributes:\n            vendor:\n              nvidia:\n                - model: ${r.gpu.model}`
+      : "";
+  return `version: "2.0"\nservices:\n  workload:\n    image: ${JSON.stringify(r.image)}\n    command: ${JSON.stringify(r.command)}\n    env: ${JSON.stringify(env)}\n    expose:\n      - port: 8080\n        as: 80\n        to:\n          - global: true\nprofiles:\n  compute:\n    workload:\n      resources:\n        cpu:\n          units: ${r.cpuMillis / 1000}\n        memory:\n          size: ${r.memoryMiB}Mi\n        storage:\n          size: ${r.storageMiB}Mi${gpu}\n  placement:\n    akash:\n      pricing:\n        workload:\n          denom: uact\n          amount: 1000000\ndeployment:\n  workload:\n    akash:\n      profile: workload\n      count: 1\n`;
+}
