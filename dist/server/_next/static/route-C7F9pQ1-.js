@@ -1,0 +1,1 @@
+import{n as e}from"./server-D5yhBnvP.js";import{a as t,i as n,r,t as i}from"./multichain-DNsOJ6sV.js";var a=`force-dynamic`;async function o(){return e.json({x402Version:2,sdkVersion:i,rails:t(),mainnets:n(),facilitator:{origin:r(),publicTestnetOnly:!process.env.X402_FACILITATOR_URL}},{headers:{"cache-control":`no-store`}})}export{o as GET,a as dynamic};
