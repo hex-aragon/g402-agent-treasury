@@ -25,7 +25,7 @@ BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
 
 # Solana Devnet transaction construction and recipient
 SOLANA_DEVNET_RPC_URL=
-SOLANA_DEVNET_RPC_URLS=https://api.devnet.solana.com,https://solana-devnet.api.onfinality.io/public
+SOLANA_DEVNET_RPC_URLS=https://api.devnet.solana.com,https://solana-devnet.api.onfinality.io/public,https://rpc.ankr.com/solana_devnet
 X402_SOLANA_PAY_TO=
 
 # Read-only reconciliation timeout for known transaction hashes

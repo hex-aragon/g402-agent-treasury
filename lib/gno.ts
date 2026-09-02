@@ -21,16 +21,27 @@ export function verifyGnoPayment(payload:PaymentPayload,req:PaymentRequirements,
 function hex(bytes:Uint8Array|undefined){return bytes?Buffer.from(bytes).toString("hex").toUpperCase():""}
 async function nativeTm2Execute(url:string,request:Parameters<RpcClient["execute"]>[0]):Promise<Awaited<ReturnType<RpcClient["execute"]>>>{
   const endpoint=new URL(url),local=endpoint.hostname==="localhost"||endpoint.hostname==="127.0.0.1";
-  if((endpoint.protocol!=="https:"&&!(local&&endpoint.protocol==="http:"))||endpoint.username||endpoint.password||endpoint.hash)throw new Error("invalid_gno_rpc_url");
+  if((endpoint.protocol!=="https:"&&!(local&&endpoint.protocol==="http:"))||endpoint.username||endpoint.password||endpoint.hash||endpoint.search)throw new Error("invalid_gno_rpc_url");
+  if(typeof request.method!=="string"||!/^[a-z][a-z0-9_]{0,63}$/.test(request.method))throw new Error("invalid_gno_rpc_method");
+  const rpcUrl=new URL(endpoint),params=request.params;
+  rpcUrl.pathname=`${rpcUrl.pathname.replace(/\/$/,"")}/${request.method}`;
+  if(params!==undefined){
+    if(!params||typeof params!=="object"||Array.isArray(params))throw new Error("invalid_gno_rpc_params");
+    for(const [key,value] of Object.entries(params)){
+      if(value===undefined)continue;
+      if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key)||(typeof value!=="string"&&typeof value!=="number"&&typeof value!=="boolean")||(typeof value==="number"&&!Number.isFinite(value)))throw new Error("invalid_gno_rpc_params");
+      rpcUrl.searchParams.set(key,String(value));
+    }
+  }
   let response:Response;
-  try{response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(request),redirect:"error",signal:AbortSignal.timeout(10_000)})}catch{throw new Error("gno_rpc_unavailable")}
+  try{response=await fetch(rpcUrl,{method:"GET",headers:{accept:"application/json"},redirect:"error",signal:AbortSignal.timeout(10_000)})}catch{throw new Error("gno_rpc_unavailable")}
   if(!response.ok)throw new Error("gno_rpc_unavailable");
   let parsed:unknown;
   try{parsed=await response.json()}catch{throw new Error("gno_rpc_unavailable")}
   if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error("gno_rpc_unavailable");
   const body=parsed as {jsonrpc?:unknown;id?:unknown;result?:unknown;error?:unknown};
-  if(body.jsonrpc!=="2.0"||body.id!==request.id||body.error||!("result" in body))throw new Error(body.error?`gno_rpc_error:${JSON.stringify(body.error).slice(0,400)}`:"gno_rpc_unavailable");
-  return body as Awaited<ReturnType<RpcClient["execute"]>>;
+  if(body.jsonrpc!=="2.0"||(body.id!==""&&body.id!==request.id)||body.error||!("result" in body))throw new Error(body.error?`gno_rpc_error:${JSON.stringify(body.error).slice(0,400)}`:"gno_rpc_unavailable");
+  return {...body,id:request.id} as Awaited<ReturnType<RpcClient["execute"]>>;
 }
 export async function connectNativeTm2(url:string):Promise<Tm2Client>{
   const client:RpcClient={disconnect(){},execute:request=>nativeTm2Execute(url,request)};
@@ -38,7 +49,7 @@ export async function connectNativeTm2(url:string):Promise<Tm2Client>{
 }
 function rawRpcHash(value:unknown){if(typeof value!=="string"||!value)return "";if(/^(?:[0-9a-fA-F]{2})+$/.test(value))return value.toUpperCase();try{return Buffer.from(value,"base64").toString("hex").toUpperCase()}catch{return ""}}
 async function nativeGnoStatus(url:string){
-  const id=Math.floor(100_000_000_000+Math.random()*900_000_000_000),response=await nativeTm2Execute(url,{jsonrpc:"2.0",id,method:"status",params:{}}),result=response.result as {node_info?:{network?:unknown};sync_info?:{latest_block_height?:unknown;latest_block_hash?:unknown;catching_up?:unknown}};
+  const id=Math.floor(100_000_000_000+Math.random()*900_000_000_000),response=await nativeTm2Execute(url,{jsonrpc:"2.0",id,method:"status",params:{heightGte:"0"}}),result=response.result as {node_info?:{network?:unknown};sync_info?:{latest_block_height?:unknown;latest_block_hash?:unknown;catching_up?:unknown}};
   if(!result?.node_info||typeof result.node_info.network!=="string"||!result.sync_info||!/^\d+$/.test(String(result.sync_info.latest_block_height??""))||typeof result.sync_info.catching_up!=="boolean")throw new Error("gno_rpc_unavailable");
   return {node_info:{network:result.node_info.network},sync_info:{latest_block_height:String(result.sync_info.latest_block_height),latest_block_hash:rawRpcHash(result.sync_info.latest_block_hash),catching_up:result.sync_info.catching_up}};
 }

@@ -105,6 +105,7 @@ const SOLANA_ASSOCIATED_TOKEN_PROGRAM = address(
 const SOLANA_DEVNET_PUBLIC_RPCS = [
   "https://api.devnet.solana.com",
   "https://solana-devnet.api.onfinality.io/public",
+  "https://rpc.ankr.com/solana_devnet",
 ] as const;
 const SOLANA_RPC_CACHE_TTL_MS = 5 * 60_000;
 const SOLANA_ATA_CACHE_TTL_MS = 25_000;
