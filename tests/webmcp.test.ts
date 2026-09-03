@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import nextConfig from "../next.config.ts";
 import {
   createWebMCPTools,
   decodePreparedMultichainPayment,
@@ -170,6 +171,23 @@ function findTool(tools: ReturnType<typeof createWebMCPTools>, name: string) {
   assert.ok(tool, `missing tool ${name}`);
   return tool;
 }
+
+test("origin-isolates every response and permits same-origin WebMCP tools", async () => {
+  const loadHeaders = nextConfig.headers;
+  assert.equal(typeof loadHeaders, "function");
+  if (!loadHeaders) throw new Error("missing Next.js headers configuration");
+  const rules = await loadHeaders();
+  const catchAll = rules.find((rule) => rule.source === "/(.*)");
+  assert.ok(catchAll, "missing catch-all security headers");
+  const headers = new Map(
+    catchAll.headers.map(({ key, value }) => [key.toLowerCase(), value]),
+  );
+  assert.equal(headers.get("origin-agent-cluster"), "?1");
+  assert.match(
+    headers.get("permissions-policy") || "",
+    /(?:^|, )tools=\(self\)(?:,|$)/,
+  );
+});
 
 test("registers seven distinct, narrow tools with correct read annotations", () => {
   const { tools } = harness(() => jsonResponse({}));

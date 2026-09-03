@@ -6,6 +6,12 @@ This file is submission copy in progress. Do not turn unchecked evidence into a 
 
 **x402 Agent Gateways — Human-approved multichain payments for AI agents**
 
+## Elevator pitch
+
+**EN:** Agents prepare exact x402 payment terms across EVM, Solana, and Gno via WebMCP — humans keep custody and give the final wallet approval. Mainnets stay locked.
+
+**KR:** AI 에이전트가 WebMCP로 EVM·Solana·Gno의 x402 결제 조건을 정확히 준비하고, 사람은 키를 넘기지 않은 채 지갑에서 최종 승인합니다. 메인넷은 잠금 상태로 유지됩니다.
+
 ## One-line description
 
 A WebMCP payment workspace where agents prepare exact EVM, Solana, or Gno testnet terms and people retain custody and approve the matching wallet transaction.
@@ -16,7 +22,7 @@ The working deployment is [https://g402-agent-treasury.vercel.app](https://g402-
 
 A bearer-protected scheduled route runs one bounded Gno Scan snapshot daily at 03:00 UTC. It is not a continuously advancing explorer. The code-ready Railway topology would run a singleton persistent indexer against private PostgreSQL, but it is not deployed.
 
-The automated suite passed 118/118 on 2026-09-03. Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl; the passing suite and working URL are not evidence of live settlement.
+The automated suite passed 119/119 on 2026-09-04. Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl; the passing suite and working URL are not evidence of live settlement.
 
 ## Why this is a strong fit for WebMCP
 
@@ -112,9 +118,10 @@ Say: “Agents handle discovery and exact preparation. People keep custody and f
 
 - [x] Application implementation and HTTPS deployment URL exist
 - [x] Seven imperative WebMCP tools are implemented
+- [x] Devpost 3:2 thumbnail exists at `public/devpost-thumbnail.png`
 - [x] Root `LICENSE` and local setup instructions exist
 - [x] Gno pre-existing work is separated from challenge additions
-- [x] Latest local automated suite passed 118/118 on 2026-09-03
+- [x] Latest local automated suite passed 119/119 on 2026-09-04
 - [ ] Re-run every automated gate on the exact submitted commit and record results
 - [ ] Complete and record a real Base Sepolia EIP-1193 settlement
 - [ ] Complete and record a real Solana Devnet Wallet Standard settlement after recipient ATA verification
