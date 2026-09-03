@@ -11,6 +11,7 @@ import { GET as readPaidResource } from "../app/api/demo/multichain-paid-data/ro
 const APP_URL = "https://routes.test";
 const FACILITATOR_URL = "https://facilitator.routes.test";
 const EVM_NETWORK = "eip155:84532";
+// Public Anvil default account; never fund or reuse it outside isolated tests.
 const evmAccount = privateKeyToAccount(
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
 );
@@ -248,6 +249,22 @@ test("v2 authorization is closed in production unless public mode or an exact be
   assert.equal((await createChallenge(challengeRequest({}))).status, 400);
 
   Reflect.set(process.env, "NODE_ENV", "test");
+});
+
+test("public protocol mode cannot prepare a mainnet challenge", async () => {
+  process.env.FACILITATOR_PUBLIC = "true";
+  delete process.env.FACILITATOR_API_KEYS;
+  const response = await createChallenge(
+    challengeRequest({
+      railId: "evm-ethereum-mainnet",
+      walletAddress: evmAccount.address,
+      resourceId: "weather",
+    }),
+  );
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    error: "mainnet_requires_operator_authorization",
+  });
 });
 
 test("v2 challenge returns 201 and a decodable Payment-Required header", async () => {

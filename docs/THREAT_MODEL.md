@@ -32,6 +32,8 @@ Wallet private keys must remain inside EIP-1193, Wallet Standard, or Adena. WebM
 | Gno contract replay/spoofing                                | Realm source pins call path/method/coins/payment fields and uses payment-ID uniqueness; realm remains disabled until deployed                                  | Gno realm source/tests; deployment gate |
 | Reorg or misleading Gno status                              | Fork-preserving blocks, canonical checkpoint, confirmations, common-ancestor rewind, and `reverted` state                                                      | Indexer tests                           |
 | API abuse                                                   | Authorization policy, shared rate buckets, strict schemas, integer/address bounds, cache controls, and bounded search output                                   | HTTP/store tests                        |
+| Public protocol mode grants management access               | Public x402 operations and operator routes use separate checks; management fails closed without a configured bearer key                                        | HTTP authorization tests                |
+| Forwarded-IP spoofing bypasses rate limits                  | Production identity uses Cloudflare's overwritten `CF-Connecting-IP` header and ignores caller-controlled forwarding chains                                    | HTTP proxy-boundary tests                |
 | Web injection/clickjacking                                  | CSP, frame denial, MIME, and permissions headers                                                                                                               | Runtime headers/config                  |
 
 ## Mainnet gates

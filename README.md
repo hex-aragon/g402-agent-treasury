@@ -55,7 +55,7 @@ Suggested prompt:
 
 > List the available payment rails. Prepare a Base Sepolia payment for my connected EVM address, then open the human review screen. Do not sign or settle anything for me.
 
-WebMCP does not receive wallet custody. The agent cannot enable mainnet, change the configured merchant recipient, provide a signed payload, or bypass the review step.
+WebMCP does not receive wallet custody. The agent cannot enable mainnet, change the configured merchant recipient, provide a signed payload, or bypass the review step. Public facilitator mode applies only to bounded x402 payment-protocol operations; agent, policy, budget, approval, metrics, index, and payment-list administration always requires a configured bearer key.
 
 ## x402 HTTP flow
 

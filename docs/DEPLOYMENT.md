@@ -39,9 +39,15 @@ G402_ALLOW_MAINNET=false
 GNO_NETWORK_ID=gno:pearl-1
 GNO_CHAIN_ID=pearl-1
 GNO_RPC_URL=https://rpc.pearl.testnets.gno.land
+NEXT_PUBLIC_GNO_CHAIN_ID=pearl-1
+NEXT_PUBLIC_GNO_RPC_URL=https://rpc.pearl.testnets.gno.land
 GNO_ASSET=gno.land/r/gnoland/wugnot
 GNO_DENOM=ugnot
 ```
+
+`GNO_RPC_URL` is server-only. Adena discovery metadata reads only the explicit
+`NEXT_PUBLIC_GNO_RPC_URL` value, which must be credential-free HTTPS without a
+query or fragment.
 
 For a merchant Gno deployment, set `G402_SELF_TEST_MODE=false` and provide a verified `G402_MERCHANT_ADDRESS`. Do not enable `G402_PAYMENT_MODE=realm` until `contracts/gno/g402pay` has been deployed, its package path verified, and `G402_CONTRACT_PATH` configured.
 

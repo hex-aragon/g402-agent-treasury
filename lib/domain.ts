@@ -43,9 +43,12 @@ export function constantTimeApiKeyMatch(value: string, allowed: string[]): boole
   const hash = (x:string) => createHash("sha256").update(x).digest();
   return allowed.some(k => timingSafeEqual(hash(value), hash(k)));
 }
+export function isKnownGnoTestnet(network: string, chainId?: string): boolean {
+  return network === "gno:pearl-1" && (!chainId || chainId === "pearl-1");
+}
 export function assertSettlementAllowed(network: string,chainId?:string): void {
   if (process.env.G402_ENABLE_SETTLEMENT !== "true") throw new Error("settlement_disabled");
   const configuredNetwork=process.env.GNO_NETWORK_ID||"gno:pearl-1",configuredChain=process.env.GNO_CHAIN_ID||"pearl-1";
-  if ((network === "gno:mainnet"||chainId==="mainnet"||configuredChain==="mainnet") && process.env.G402_ALLOW_MAINNET !== "true") throw new Error("mainnet_locked");
+  if ((!isKnownGnoTestnet(network,chainId)||!isKnownGnoTestnet(configuredNetwork,configuredChain)) && process.env.G402_ALLOW_MAINNET !== "true") throw new Error("mainnet_locked");
   if(network!==configuredNetwork||Boolean(chainId&&chainId!==configuredChain))throw new Error("network_not_configured");
 }

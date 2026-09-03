@@ -61,6 +61,7 @@ import {
 import { resourceHash } from "../lib/domain.ts";
 import { G402SettlementAdapter } from "../packages/akash/src/settlement.ts";
 
+// Public Anvil default account; never fund or reuse it outside isolated tests.
 const evmAccount = privateKeyToAccount(
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
 );
@@ -464,6 +465,22 @@ test("registry exposes five rails and requires two independent gates per EVM/Sol
       else process.env[key] = value;
     }
   }
+});
+
+test("Gno rail marks every non-Pearl configuration as mainnet and locked", async () => {
+  await withEnvironment(
+    {
+      GNO_NETWORK_ID: "gno:customnet",
+      GNO_CHAIN_ID: "customnet",
+      G402_ALLOW_MAINNET: "false",
+      G402_SELF_TEST_MODE: "true",
+    },
+    async () => {
+      const rail = paymentRails().find((item) => item.id === "gno-pearl");
+      assert.equal(rail?.mainnet, true);
+      assert.equal(rail?.status, "locked");
+    },
+  );
 });
 
 test("Solana challenge treats a JSON-RPC error as unavailable infrastructure", async () => {

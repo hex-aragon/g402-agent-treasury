@@ -1,1 +1,0 @@
-import{n as e}from"./server-Ct-leivz.js";import{n as t}from"./registry-DubOulEh.js";async function n(){return e.json({chains:t().map(e=>({...e,rpc:e.rpc?`configured`:``}))},{headers:{"cache-control":`public, max-age=60`}})}export{n as GET};
