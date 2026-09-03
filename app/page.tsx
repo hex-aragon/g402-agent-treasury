@@ -103,7 +103,7 @@ export default async function Home() {
             />
             <Activity
               text="One challenge can produce one facilitator settlement"
-              time="atomic D1"
+              time="atomic PostgreSQL"
             />
             <Activity
               text="Wallet approval is separated from agent preparation"
