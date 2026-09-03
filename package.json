@@ -7,13 +7,14 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "vite",
-    "build": "vinext build",
-    "start": "vinext start",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "lint": "tsc --noEmit",
-    "test": "npm run test:services && npm run test:chain && npm run test:multichain && npm run test:routes",
+    "test": "npm run test:services && npm run test:chain && npm run test:http && npm run test:multichain && npm run test:routes",
     "test:services": "node --experimental-transform-types --test --test-concurrency=1 tests/akash-e2e.test.ts tests/akash.test.ts tests/cosmos-e2e.test.ts tests/cosmos.test.ts tests/domain.test.ts tests/filecoin-e2e.test.ts tests/filecoin.test.ts",
     "test:chain": "node --experimental-transform-types --test --test-concurrency=1 tests/adena.test.ts tests/challenge.test.ts tests/gno.test.ts tests/indexer.test.ts tests/policy.test.ts tests/rate-limit.test.ts tests/rpc-e2e.test.ts tests/store.test.ts tests/webmcp.test.ts",
+    "test:http": "node --import tsx --test --test-concurrency=1 tests/http.test.ts",
     "test:multichain": "node --experimental-transform-types --test --test-concurrency=1 tests/multichain.test.ts tests/reconciliation.test.ts tests/migration-integrity.test.ts",
     "test:routes": "node --import tsx --test --test-concurrency=1 tests/routes-v2.test.ts",
     "typecheck": "tsc --noEmit",
@@ -26,15 +27,13 @@
     "e2e:filecoin": "tsx scripts/filecoin-e2e.ts",
     "e2e:cosmos": "tsx scripts/cosmos-e2e.ts",
     "maintenance": "tsx scripts/maintenance.ts",
-    "contract:gno:deploy": "bash scripts/deploy-gno-contract.sh",
-    "db:generate:d1": "drizzle-kit generate"
+    "contract:gno:deploy": "bash scripts/deploy-gno-contract.sh"
   },
   "dependencies": {
     "@cosmjs/proto-signing": "^0.38.1",
     "@cosmjs/stargate": "^0.38.1",
     "@gnolang/gno-js-client": "^2.0.4",
     "@gnolang/tm2-rpc": "^1.0.0",
-    "@neondatabase/serverless": "^1.0.1",
     "@solana/kit": "5.5.1",
     "@solana/wallet-standard-features": "1.4.0",
     "@wallet-standard/app": "1.1.1",
@@ -46,24 +45,19 @@
     "cosmjs-types": "^0.11.0",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.2",
+    "postgres": "^3.4.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "viem": "2.56.3",
     "zod": "^4.1.5"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.54.1",
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
-    "@vitejs/plugin-rsc": "0.5.34",
-    "drizzle-kit": "^0.31.10",
     "react-server-dom-webpack": "19.2.8",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.2",
-    "vinext": "1.0.0-beta.8",
-    "vite": "8.2.2",
-    "wrangler": "4.127.0"
+    "typescript": "^5.9.2"
   },
   "engines": {
     "node": ">=22.12.0"

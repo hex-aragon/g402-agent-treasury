@@ -1,144 +1,154 @@
 # Deployment guide
 
-## Primary topology: ChatGPT Sites + D1
+Production is [https://g402-agent-treasury.vercel.app](https://g402-agent-treasury.vercel.app). Vercel runs the Next.js application and API routes, and a dedicated Neon PostgreSQL database holds durable application and Scan state.
 
-x402 Agent Gateways deploys as one Vinext/Cloudflare Site. `.openai/hosting.json` declares the logical `DB` D1 binding, and the packaged `drizzle/` migrations initialize the durable challenge and payment ledger.
+No real-wallet payment has yet been completed and recorded for this release on Base Sepolia, Solana Devnet, or Gno Pearl. A live page and passing automated tests are not evidence of live settlement or merchant revenue.
 
-Keep the deployment private until judge access is deliberately configured and tested. A successful owner session is not evidence that judges can open the Site.
+## Current topology and limitation
 
-## Baseline testnet configuration
+| Component | Platform | Current role |
+| --- | --- | --- |
+| Web and API | Vercel Next.js | Public UI, WebMCP, facilitator APIs, health, and Scan queries |
+| Database | Dedicated Neon PostgreSQL | Migrations, challenges, payments, Scan data, checkpoints, leases, and audit records |
+| Gno indexing | Protected Vercel Cron route | One bounded `/api/cron/index` run daily at 03:00 UTC |
+| Railway | Not provisioned | Persistent topology is code-ready but blocked by the current free-plan resource limit |
 
-Use verified recipients before any real-wallet acceptance. Empty recipient values select built-in testnet demo sinks; those addresses are not merchant-controlled and must not receive assets of value.
+Vercel Hobby cron is limited to one run per day. Production Scan data is therefore a daily snapshot, not a continuously advancing explorer or complete chain archive. Transactions mined after a run may remain absent until a later run, and the checkpoint can lag Pearl between invocations.
+
+`vercel.json` schedules `GET /api/cron/index` at 03:00 UTC. The route:
+
+- requires `Authorization: Bearer <CRON_SECRET>` and returns 401 when it is absent or wrong;
+- runs one exported, bounded `runIndexerTick()` batch;
+- uses a 300-second function ceiling with `INDEXER_TICK_MAX_MS=240000`;
+- returns 503 on indexing failure.
+
+Set `INDEXER_MODE=scheduled` on Vercel. If a checkpoint falls outside `INDEXER_BOOTSTRAP_DEPTH`, scheduled mode reanchors to a recent confirmed window. Previously stored canonical history is preserved and the intentionally skipped range is logged, but skipped historical transactions are not reconstructed.
+
+## Vercel and Neon variables
+
+Use Vercel secrets for all credentials. The production-specific baseline is:
 
 ```text
-FACILITATOR_PUBLIC=true
-X402_SAMPLE_PRICE_ATOMIC=1000
+NODE_ENV=production
+APP_URL=https://g402-agent-treasury.vercel.app
+DATABASE_URL=<dedicated-neon-postgres-url>
+DATABASE_POOL_MAX=5
 
-# Optional custom testnet facilitator. Empty uses the public default.
-X402_FACILITATOR_URL=
-X402_FACILITATOR_TIMEOUT_MS=15000
-X402_FACILITATOR_BEARER_TOKEN=
+CRON_SECRET=<high-entropy-secret>
+INDEXER_MODE=scheduled
+INDEXER_BOOTSTRAP_DEPTH=100
+INDEXER_BATCH_SIZE=100
+INDEXER_MAX_REORG_DEPTH=100
+INDEXER_CONFIRMATIONS=2
+INDEXER_TICK_MAX_MS=240000
+INDEXER_LEASE_SECONDS=60
+INDEXER_READY_MAX_LAG=20000
+INDEXER_READY_MAX_AGE_MS=90000000
+```
 
-# Base Sepolia merchant/test recipient
-X402_EVM_PAY_TO=
-BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
+The worker ensures its effective lease covers a bounded tick even when the configured lease minimum is 60 seconds. `INDEXER_READY_MAX_LAG=20000` and `INDEXER_READY_MAX_AGE_MS=90000000` (25 hours) are allowances for the daily snapshot. They do not promise real-time indexing. Use much tighter readiness limits for a persistent worker.
 
-# Solana Devnet transaction construction and recipient
-SOLANA_DEVNET_RPC_URL=
-SOLANA_DEVNET_RPC_URLS=https://api.devnet.solana.com,https://solana-devnet.api.onfinality.io/public,https://rpc.ankr.com/solana_devnet
-X402_SOLANA_PAY_TO=
+The Pearl variables, access keys, recipient settings, and facilitator settings are listed in `.env.example`. Keep every mainnet gate explicitly false:
 
-# Read-only reconciliation timeout for known transaction hashes
-X402_RECONCILE_RPC_TIMEOUT_MS=8000
-
-# Native Gno Pearl v1 adapter
-G402_SELF_TEST_MODE=true
-G402_PAYMENT_MODE=direct
-G402_ENABLE_SETTLEMENT=true
+```text
 G402_ALLOW_MAINNET=false
-GNO_NETWORK_ID=gno:pearl-1
-GNO_CHAIN_ID=pearl-1
-GNO_RPC_URL=https://rpc.pearl.testnets.gno.land
-GNO_ASSET=gno.land/r/gnoland/wugnot
-GNO_DENOM=ugnot
+X402_ALLOW_EVM_MAINNET=false
+X402_ENABLE_EVM_MAINNET_SETTLEMENT=false
+X402_ALLOW_SOLANA_MAINNET=false
+X402_ENABLE_SOLANA_MAINNET_SETTLEMENT=false
+AKASH_ALLOW_MAINNET=false
+FILECOIN_ALLOW_MAINNET=false
+COSMOS_ALLOW_MAINNET=false
 ```
 
-For a merchant Gno deployment, set `G402_SELF_TEST_MODE=false` and provide a verified `G402_MERCHANT_ADDRESS`. Do not enable `G402_PAYMENT_MODE=realm` until `contracts/gno/g402pay` has been deployed, its package path verified, and `G402_CONTRACT_PATH` configured.
+`CRON_SECRET`, `DATABASE_URL`, API keys, and facilitator bearer tokens are server-only. Never prefix them with `NEXT_PUBLIC_`, put them in URLs, or expose them in client props or logs. `NEXT_PUBLIC_GNO_RPC_URL` is browser-visible and must be credential-free HTTPS.
 
-For Solana, provision and verify the recipient's associated token account for the exact configured USDC mint before a live settlement. Address syntax alone is insufficient operational readiness. For each RPC candidate, the app treats genesis validation, exact ATA validation, official x402 payload construction, and local transaction decoding as one attempt; results from different RPCs are never combined. Successful cluster checks are cached for five minutes and exact ATA checks for 25 seconds, with review forcing a fresh ATA read. Set `SOLANA_DEVNET_RPC_URLS` to an ordered list of at most three endpoints when shared Devnet infrastructure needs failover; an explicitly configured single `SOLANA_DEVNET_RPC_URL` is never expanded to third-party fallbacks, and mainnet always uses exactly one configured RPC.
+## Migrations
 
-## Facilitator configuration
+PostgreSQL migrations live under `db/migrations`; `scripts/migrate.ts` records completed versions in `schema_migrations`. Apply required migrations before deploying dependent code:
 
-If `X402_FACILITATOR_URL` is empty, the app uses the public x402 facilitator and treats it as testnet-only. A custom URL must:
+```bash
+npm ci
+DATABASE_URL='<target-postgres-url>' npm run db:migrate
+```
 
-- use HTTPS
-- contain no username or password
-- contain no query string or fragment
-- expose x402 v2 `/supported`, `/verify`, and `/settle` behavior expected by the SDK
+Use a trusted secret-injected environment, verify the migration ledger afterward, and back up the database before non-additive changes. Never edit an applied migration or automatically seed production.
 
-Set `X402_FACILITATOR_BEARER_TOKEN` only through the hosted secret configuration. Never put it in `.env.example`, source control, a URL, logs, or client-rendered props. Rail discovery returns only the facilitator origin.
+## Health and monitoring
 
-Challenge creation checks `/supported` and rejects a facilitator that does not advertise the exact scheme/network pair.
+- `GET /api/live` is dependency-free liveness. HTTP 200 does not prove database, RPC, payment, or indexer readiness.
+- `GET /api/health` checks PostgreSQL, Pearl RPC and chain ID, required configuration, checkpoint error, age, and lag.
+- Scheduled-mode readiness uses the documented 20,000-block and 25-hour allowances.
 
-## Mainnet configuration
+Monitor the daily cron result and duration, unauthorized or failed cron responses, `index_failed` and reanchor logs, `indexer_checkpoints.last_error`, checkpoint age and lag, Neon errors, and migration failures. A rendered `/scan` page does not prove the latest cron succeeded.
 
-Mainnet is a staged promotion, not a single switch. Keep every flag below false for the hackathon demonstration.
+## Railway provisioning status
 
-### Ethereum
+The Dockerfiles, Compose configuration, migrations, persistent worker, health routes, and PostgreSQL lease are ready. Provisioning a new isolated project with:
 
-All conditions are required:
+```bash
+railway init --name g402-agent-treasury --json
+```
+
+was blocked by Railway with:
 
 ```text
-X402_ALLOW_EVM_MAINNET=true
-X402_ENABLE_EVM_MAINNET_SETTLEMENT=true
-X402_ETHEREUM_PAY_TO=0x...
-ETHEREUM_MAINNET_RPC_URL=https://...
-X402_FACILITATOR_URL=https://your-production-facilitator.example
+Free plan resource provision limit exceeded. Please upgrade to provision more resources!
 ```
 
-The recipient must be verified, the HTTPS reconciliation RPC must be configured, and the facilitator must advertise `eip155:1` with exact-payment support. The public default facilitator does not satisfy the production-facilitator gate.
+No existing Railway project was modified, deleted, or reused. Do not repurpose an unrelated project to bypass the limit.
 
-### Solana
+## Railway topology after a plan upgrade
 
-All conditions are required:
+| Service | Build | Exposure | Role |
+| --- | --- | --- | --- |
+| `web` | `Dockerfile.web` | Public domain and `/api/live` healthcheck | Next.js UI/API and database-backed queries |
+| `indexer` | `Dockerfile.worker`, one replica | Private; no domain or HTTP healthcheck | Continuous bounded indexing and reorg recovery |
+| `Postgres` | Railway PostgreSQL | Private | Shared durable state and worker lease |
+
+After upgrading Railway:
+
+1. Create a new isolated `g402-agent-treasury` project and verify its identity before adding resources. Leave pre-existing projects untouched.
+2. Add private Railway PostgreSQL, then add `web` and one `indexer` service from the same repository commit.
+3. Configure `web` with `Dockerfile.web`, pre-deploy command `npm run db:migrate`, and healthcheck `/api/live`.
+4. Configure `indexer` with `Dockerfile.worker`, no public domain, and restart-on-failure.
+5. Set `DATABASE_URL=${{Postgres.DATABASE_URL}}` as a private reference on both services.
+6. Copy the reviewed Pearl, access, recipient, facilitator, and explicit mainnet-lock variables.
+7. Set `INDEXER_MODE=persistent` on both web and indexer. Compose already overrides both services to persistent mode.
+8. Start with `INDEXER_READY_MAX_LAG=10` and `INDEXER_READY_MAX_AGE_MS=120000`, then tune from measured behavior.
+9. If Neon records must move, take a consistent backup, restore it privately, run migrations, and compare migration versions, payment counts, and checkpoint state before enabling Railway writers. Never operate Neon and Railway PostgreSQL as independent production writers.
+10. Deploy and migrate `web` first. Start `indexer` only after the migration ledger is current; verify lease renewal, continuous checkpoint progress, restart recovery, and `/api/health`.
+11. Keep Vercel serving until Railway smoke checks and data comparison pass. Cut traffic over only after setting and verifying the final HTTPS `APP_URL`.
+
+Persistent-worker controls:
 
 ```text
-X402_ALLOW_SOLANA_MAINNET=true
-X402_ENABLE_SOLANA_MAINNET_SETTLEMENT=true
-X402_SOLANA_MAINNET_PAY_TO=...
-SOLANA_MAINNET_RPC_URL=https://...
-X402_FACILITATOR_URL=https://your-production-facilitator.example
+INDEXER_MODE=persistent
+INDEXER_INTERVAL_MS=4000
+INDEXER_BOOTSTRAP_DEPTH=100
+INDEXER_BATCH_SIZE=20
+INDEXER_MAX_REORG_DEPTH=100
+INDEXER_CONFIRMATIONS=2
+INDEXER_TICK_MAX_MS=45000
+INDEXER_LEASE_SECONDS=60
+INDEXER_READY_MAX_LAG=10
+INDEXER_READY_MAX_AGE_MS=120000
 ```
 
-Verify the recipient and its mainnet USDC associated token account. The facilitator must advertise the configured Solana mainnet CAIP-2 identifier.
+The Railway indexer has no HTTP server. Monitor its process, structured logs, lease heartbeat, checkpoint freshness and lag, reorg alerts, and reverted payments.
 
-### Gno
+## Acceptance and rollback
 
-Gno mainnet is independent of the v2 gates. It requires `G402_ALLOW_MAINNET=true`, `G402_ENABLE_SETTLEMENT=true`, explicit `GNO_NETWORK_ID=gno:mainnet`, the matching chain/RPC configuration, and a verified merchant address.
+Before promotion, run `npm test`, `npm run typecheck`, `npm run build`, and `npm audit --audit-level=high`. Verify `/api/live`, `/api/health`, unauthenticated cron rejection, rail discovery, challenge binding, pending-payment behavior, the scheduled `/scan` label, and every mainnet lock.
 
-No mainnet activation is complete until two-person configuration review, live capability checks, chain-native monitoring, limits, and rollback drills are recorded.
+Run staged checks against the actual production URL:
 
-## Release order
+```bash
+STAGING_BASE_URL=https://g402-agent-treasury.vercel.app \
+STAGING_FACILITATOR_KEY='<secret-if-required>' \
+npm run e2e:staging
+```
 
-1. Install from the committed lockfile in a clean environment.
-2. Run the full test, typecheck, production build, audit, and clean D1 migration checks.
-3. Confirm the exact testnet recipients and, for Solana, the required USDC ATA.
-4. Confirm every mainnet flag is false and no production secret is present in source or generated client assets.
-5. Save and deploy a private Site version from the exact tested commit.
-6. Check deployment status and authenticated `/api/health`, `/api/v2/rails`, `/webmcp`, `/pay`, `/wallet`, and `/scan` responses.
-7. Complete manual wallet acceptance on Base Sepolia, Solana Devnet, and Gno Pearl as applicable. Record the server-issued payment IDs and transaction identifiers without exposing keys.
-8. Verify the protected-resource retry with `X-Payment-Id` and exact receipt lookup.
-9. Grant judge access, then test the URL from a non-owner session.
+Do not claim successful real-wallet payment acceptance until the transaction, facilitator result, durable payment record, and chain evidence have actually been captured and reviewed.
 
-Do not publish claims, a demo video, or Devpost answers until the manual evidence matches them.
-
-## HTTP smoke checks
-
-- `GET /api/v2/rails` lists five rails, reports mainnet readiness, and exposes no facilitator secret.
-- `POST /api/v2/challenges` for Base Sepolia or Solana Devnet returns 201, server-issued challenge/payment IDs, structured terms, and `Payment-Required`.
-- `POST /api/v2/review` rejects changed payer/resource/unsigned payload; for Solana it returns a fresh-blockhash payload, atomically replaces the stored message hash, and keeps the identifiers/requirements unchanged.
-- `POST /api/v2/settle` preserves pending or response-mismatch states without unlocking the resource. An identical retry with a known transaction hash reconciles finalized chain data without a second facilitator settlement.
-- A transaction-less unknown outcome stays manual pending and is not automatically submitted again.
-- `GET /api/demo/multichain-paid-data` without a payment ID returns 402 discovery guidance.
-- The same GET with a matching settled `X-Payment-Id` returns the paid response.
-- `GET /api/health` verifies D1 and the native Gno configuration.
-
-The paid-resource GET does not emit final EVM/Solana `Payment-Required` terms by itself. Wallet-specific terms come from the challenge preflight.
-
-## Indexing model
-
-The Site does not run an infinite worker. `/scan` bootstraps a bounded recent Gno range when empty. Authenticated `POST /api/internal/index` advances a bounded batch. Each block is replay-safe; checkpoints move only after its statements are written. Forks are retained and canonical flags rewind to a common ancestor.
-
-EVM and Solana settlement records originate in the facilitator ledger. Pending records with a known transaction hash can be finalized on an identical retry: EVM reconciliation checks finalized receipt/input/Transfer log, and Solana reconciliation checks finalized status and the latest stored message hash. Immediate facilitator successes are not independently indexed by default, and transaction-less unknown outcomes cannot be auto-reconciled. Do not represent every facilitator record as an independent finality proof.
-
-For continuous Gno indexing, deploy the optional Node/PostgreSQL worker and point web and worker at one PostgreSQL database. That is a separate topology with migrations under `db/migrations`.
-
-## Platform notes
-
-This repository builds with Vinext for the Cloudflare runtime. It is not a drop-in Vercel build. A Vercel port requires a standard Next build, PostgreSQL-compatible persistence, and authenticated scheduled indexing or a persistent external worker.
-
-## Monitoring and recovery
-
-Alert on D1 errors, facilitator timeouts, settlement records stuck in `settling` or `broadcast`, response-binding mismatches, Gno RPC chain mismatch, index lag, reorgs, and any mainnet flag change. Preserve challenge, payment, audit, block, transaction, and event rows during incidents.
-
-Never rewrite a payment fingerprint or manually mark a pending facilitator response settled. Identical retries may perform read-only reconciliation only when a valid transaction hash is already stored; they never call facilitator settlement again. A transaction-less unknown outcome requires an operator to investigate external facilitator and chain records before any manual state correction.
+For Vercel rollback, restore the prior application deployment without deleting or rewriting Neon rows. For a failed Railway transition, stop Railway writers before returning traffic to Vercel or reconciling data. Schema rollback requires a reviewed forward migration or tested restore; never rewrite payment fingerprints or manually mark an unknown result settled.

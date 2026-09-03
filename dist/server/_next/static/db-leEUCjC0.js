@@ -1,1 +1,0 @@
-async function e(){try{return(await import(`cloudflare:workers`)).env.DB??null}catch{return null}}async function t(){let t=await e();if(!t)throw Error(`durable_database_unavailable`);return t}export{t as n,e as t};

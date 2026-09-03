@@ -6,9 +6,12 @@ COPY packages/akash/package.json ./packages/akash/package.json
 COPY packages/filecoin/package.json ./packages/filecoin/package.json
 COPY packages/cosmos/package.json ./packages/cosmos/package.json
 RUN npm ci
-FROM node:24-alpine
+
+FROM node:24-alpine AS runner
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+ENV NODE_ENV=production
+COPY --from=deps --chown=node:node /app/node_modules ./node_modules
+COPY --chown=node:node . .
 USER node
-CMD ["npm", "run", "worker"]
+STOPSIGNAL SIGTERM
+CMD ["node", "--import", "tsx", "worker/indexer.ts"]

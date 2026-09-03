@@ -26,7 +26,7 @@ import {
 } from "@solana/kit";
 import { ExactSvmScheme as ExactSvmClientScheme } from "@x402/svm/exact/client";
 import { createGnoChallenge } from "./challenge.ts";
-import { resourceHash } from "./domain.ts";
+import { isKnownGnoTestnet, resourceHash } from "./domain.ts";
 import {
   appendAudit,
   claimSettlement,
@@ -189,12 +189,18 @@ function amountForDemo(): string {
 }
 
 function gnoRail(): RailCapability {
+  const network = process.env.GNO_NETWORK_ID || "gno:pearl-1";
+  const chain = process.env.GNO_CHAIN_ID || "pearl-1";
+  const mainnet = !isKnownGnoTestnet(network, chain);
+  const recipientReady =
+    Boolean(process.env.G402_MERCHANT_ADDRESS) ||
+    process.env.G402_SELF_TEST_MODE === "true";
   return {
     id: "gno-pearl",
     family: "gno",
     label: "Gno Pearl",
-    network: (process.env.GNO_NETWORK_ID || "gno:pearl-1") as Network,
-    chain: process.env.GNO_CHAIN_ID || "pearl-1",
+    network: network as Network,
+    chain,
     asset: process.env.GNO_ASSET || "gno.land/r/gnoland/wugnot",
     symbol: "WUGNOT",
     decimals: 6,
@@ -209,11 +215,12 @@ function gnoRail(): RailCapability {
     settlement: "native",
     apiVersion: "v1",
     status:
-      process.env.G402_MERCHANT_ADDRESS ||
-      process.env.G402_SELF_TEST_MODE === "true"
-        ? "native_ready"
-        : "setup_required",
-    mainnet: false,
+      mainnet && process.env.G402_ALLOW_MAINNET !== "true"
+        ? "locked"
+        : recipientReady
+          ? "native_ready"
+          : "setup_required",
+    mainnet,
     capabilities: ["exact", "direct-transfer", "resource-memo"],
   };
 }

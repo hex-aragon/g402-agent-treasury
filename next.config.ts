@@ -1,6 +1,17 @@
 import type { NextConfig } from "next";
 
-const rpcOrigin = new URL(process.env.GNO_RPC_URL || "https://rpc.pearl.testnets.gno.land").origin;
+const pearlRpc = "https://rpc.pearl.testnets.gno.land";
+function publicRpcOrigin() {
+  try {
+    const url = new URL(process.env.NEXT_PUBLIC_GNO_RPC_URL || pearlRpc);
+    return url.protocol === "https:" && !url.username && !url.password
+      ? url.origin
+      : new URL(pearlRpc).origin;
+  } catch {
+    return new URL(pearlRpc).origin;
+  }
+}
+const rpcOrigin = publicRpcOrigin();
 
 const config: NextConfig = {
   reactStrictMode: true,

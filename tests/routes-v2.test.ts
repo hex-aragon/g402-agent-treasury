@@ -250,6 +250,22 @@ test("v2 authorization is closed in production unless public mode or an exact be
   Reflect.set(process.env, "NODE_ENV", "test");
 });
 
+test("public protocol mode cannot prepare a mainnet challenge", async () => {
+  process.env.FACILITATOR_PUBLIC = "true";
+  delete process.env.FACILITATOR_API_KEYS;
+  const response = await createChallenge(
+    challengeRequest({
+      railId: "evm-ethereum-mainnet",
+      walletAddress: evmAccount.address,
+      resourceId: "weather",
+    }),
+  );
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    error: "mainnet_requires_operator_authorization",
+  });
+});
+
 test("v2 challenge returns 201 and a decodable Payment-Required header", async () => {
   const challenge = await issueChallenge();
   assert.match(challenge.challengeId, /^[a-f0-9]{32}$/);

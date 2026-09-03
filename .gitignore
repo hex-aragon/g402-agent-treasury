@@ -1,8 +1,32 @@
 node_modules
 .next
 .vercel
-.env
-.env.local
+dist
+.wrangler
+
+# Local configuration and platform secrets. Keep the documented template.
+.env*
+!.env.example
+.dev.vars*
+
+# Local databases, credentials, and signing material.
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+id_rsa*
+id_ed25519*
+
+# Editor and operating-system metadata.
+.DS_Store
+.idea
+.vscode
 coverage
 *.log
 *.tsbuildinfo

@@ -2,7 +2,11 @@
 
 x402 Agent Gateways is a human-approved payment workspace for AI agents across EVM, Solana, and Gno. An agent can discover supported rails, prepare server-bound terms, and open the correct wallet review screen. The person still connects the wallet and approves the exact transaction.
 
-**Live app:** https://x402-agent-gateways.gentle-berry-8248.chatgpt.site
+**Production:** [https://g402-agent-treasury.vercel.app](https://g402-agent-treasury.vercel.app)
+
+**Current runtime:** Vercel Next.js with a dedicated Neon PostgreSQL database
+
+**Gno Scan cadence:** protected `/api/cron/index` snapshot once per day at 03:00 UTC
 
 **WebMCP workspace:** `/webmcp`
 
@@ -21,6 +25,10 @@ The chain-neutral control plane uses the official x402 TypeScript packages for p
 | Gno Pearl        | Adena `SignTx`, direct WUGNOT, native TM2 verifier and broadcaster             | Native v1 path retained. Gno mainnet has an independent lock. The optional `g402pay` realm is source- and test-complete but not deployed.                                                                            |
 
 `sdk_ready` means the application's SDK-integrated code path can construct, validate, and submit that rail. It is not a claim that a live wallet transfer has been completed or that every successful facilitator response has been independently reconciled on-chain.
+
+No real-wallet payment has been completed and recorded for this release on Base Sepolia, Solana Devnet, or Gno Pearl. The hosted application demonstrates the implemented and automated-test-backed paths; it is not evidence of live settlement or merchant revenue.
+
+The production Gno Scan is a bounded daily snapshot, not a continuously advancing explorer. Vercel Hobby cron invokes the protected index endpoint once daily, so transaction visibility and checkpoint height can lag the chain between runs.
 
 The built-in EVM and Solana fallback recipients are testnet demo sinks, not merchant accounts. They have no repository-owned spending key and must not be used as evidence of merchant revenue. Configure a verified testnet merchant recipient before recording a live acceptance transaction.
 
@@ -55,7 +63,7 @@ Suggested prompt:
 
 > List the available payment rails. Prepare a Base Sepolia payment for my connected EVM address, then open the human review screen. Do not sign or settle anything for me.
 
-WebMCP does not receive wallet custody. The agent cannot enable mainnet, change the configured merchant recipient, provide a signed payload, or bypass the review step.
+WebMCP does not receive wallet custody. The agent cannot enable mainnet, change the configured merchant recipient, provide a signed payload, or bypass the review step. Public facilitator mode applies only to signed payment-protocol operations; agent, policy, budget, approval, metrics, index, and payment-list administration always requires a configured bearer key.
 
 ## x402 HTTP flow
 
@@ -89,11 +97,12 @@ The native Gno flow remains on `/api/v1/challenges`, `/api/v1/verify`, and `/api
 | `lib/multichain.ts`     | Rail registry; official x402 facilitator/SVM clients; EVM protocol-definition orchestration |
 | `lib/reconciliation.ts` | On-chain reconciliation for known EVM and Solana transaction hashes                         |
 | `lib/webmcp.ts`         | Seven bounded WebMCP tools and client-side safety predicates                                |
-| `lib/store.ts`          | D1/PostgreSQL challenge and settlement ledger with atomic claims                            |
+| `lib/store.ts`          | PostgreSQL challenge and settlement ledger with atomic claims                               |
 | `lib/gno.ts`            | Gno/TM2 signing verification and RPC settlement                                             |
-| `lib/scan.ts`           | Bounded Pearl indexer with common-ancestor reorg recovery                                   |
+| `lib/scan.ts`           | PostgreSQL-backed Pearl Scan status and query layer                                         |
+| `worker/indexer.ts`     | Bounded one-shot or persistent Pearl indexer with lease and reorg recovery                  |
 | `contracts/gno/g402pay` | Optional native-GNOT realm source and tests; not chain-deployed                             |
-| `drizzle`               | Cloudflare D1 migrations packaged with the Site                                             |
+| `db/migrations`         | Ordered PostgreSQL schema migrations shared by the web and indexer services                 |
 
 The monorepo also contains separately gated Akash, Filecoin/IPFS, and Cosmos packages. They are not represented as active rails in the hosted chain-neutral payment demo.
 
@@ -106,6 +115,14 @@ npm run dev
 ```
 
 The default v2 facilitator is public and testnet-oriented. Set verified merchant recipients before any real testnet acceptance. Keep all mainnet gates false during normal development.
+
+To exercise the production-shaped PostgreSQL topology locally, run:
+
+```bash
+docker compose up --build
+```
+
+Compose starts PostgreSQL, applies `db/migrations` once, starts the web service, and starts the persistent Gno indexer against the same database. The local web container keeps settlement and every mainnet rail locked by default.
 
 ## Quality gates
 
@@ -120,9 +137,19 @@ Automated EVM/SVM coverage uses deterministic official-SDK compatibility fixture
 
 ## Deployment and safety
 
-The primary target is ChatGPT Sites with the `DB` D1 binding declared in `.openai/hosting.json`. Mainnet adapters remain unavailable unless their independent allow flag and settlement flag are both true and all runtime prerequisites are present. The facilitator URL must be HTTPS without embedded credentials, query parameters, or fragments; an optional bearer token stays server-side.
+The live production deployment is [g402-agent-treasury.vercel.app](https://g402-agent-treasury.vercel.app):
 
-Keep the Site private until judge access is explicitly configured. Before submission, complete the real-wallet testnet acceptance items, publish the source repository and demo video, and verify that judges can reach the deployment.
+- Vercel runs the Next.js web application and API routes.
+- A dedicated Neon PostgreSQL database stores migrations, challenges, payments, Scan data, checkpoints, and worker leases.
+- Vercel Cron calls the bearer-protected `/api/cron/index` route at 03:00 UTC daily. Each invocation runs one bounded indexing tick with scheduled catch-up behavior.
+
+This Vercel Hobby cron is not a continuous indexer. `/scan` is a recent bounded snapshot and may remain stale until the next daily invocation. `CRON_SECRET` must be present and is never a browser variable.
+
+The production-shaped Railway topology—`web`, one persistent `indexer`, and private PostgreSQL—is implemented in the Docker and Compose configuration but is not deployed. A new isolated project attempt with `railway init --name g402-agent-treasury --json` was rejected with `Free plan resource provision limit exceeded. Please upgrade to provision more resources!`; no existing Railway project was modified. The Railway transition steps remain documented for use after a plan upgrade.
+
+Mainnet adapters remain unavailable unless their independent allow flag and settlement flag are both true and all runtime prerequisites are present. Keep every `*_ALLOW_MAINNET` and mainnet settlement flag explicitly set to `false`. The facilitator URL must be HTTPS without embedded credentials, query parameters, or fragments; an optional bearer token stays server-side.
+
+Before claiming payment readiness, complete and record real-wallet testnet acceptance for each advertised rail and verify access from a non-owner session.
 
 See `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`, `docs/DEPLOYMENT.md`, `docs/WEBMCP_CHALLENGE.md`, and `docs/RELEASE_CHECKLIST.md`.
 

@@ -2,15 +2,20 @@
 
 Every item applies to the exact commit and deployment submitted to Devpost. Automated SDK/mock evidence and live-wallet acceptance are recorded separately.
 
+Latest local evidence: 118/118 tests passed on 2026-09-03. This does not replace a rerun on the exact submitted commit. Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl.
+
 ## Automated gates
 
 - [ ] `npm ci` succeeds from the committed lockfile in a clean directory
-- [ ] `npm test` passes, including chain, store, WebMCP, and multichain suites
+- [ ] `npm test` passes on the exact submitted commit, including chain, store, WebMCP, and multichain suites (latest local run: 118/118 on 2026-09-03)
 - [ ] `npm run typecheck` passes
-- [ ] `npm run build` produces the expected Worker bundle and static assets
+- [ ] `npm run build` produces the expected Next.js production build for Vercel
 - [ ] `npm audit --audit-level=high` reports no unresolved high/critical vulnerability
-- [ ] All D1 migrations apply to a clean database
-- [ ] A schema inspection confirms challenge metadata and settlement-claim indexes
+- [ ] PostgreSQL migrations `001`–`015` apply to a clean database and are recorded in `schema_migrations`
+- [ ] Schema inspection confirms challenge and settlement-claim indexes plus the `015_railway_scan` checkpoint, canonical block, transaction, and event structures
+- [ ] Production uses Vercel Next.js and one dedicated Neon PostgreSQL database as the authoritative store
+- [ ] Bearer-protected `GET /api/cron/index` is scheduled for 03:00 UTC daily and rejects missing or invalid authorization
+- [ ] Scan is described as a bounded daily snapshot; Railway persistent indexing is not described as deployed
 - [ ] Generated/browser assets contain no API key, bearer token, wallet secret, or embedded facilitator credential
 
 ## Chain-neutral control plane
@@ -56,7 +61,7 @@ Every item applies to the exact commit and deployment submitted to Devpost. Auto
 
 ## Gno
 
-- [ ] D1 challenge, payment, rate-limit, block, transaction, event, and checkpoint tables exist
+- [ ] PostgreSQL challenge, payment, rate-limit, block, transaction, event, and checkpoint tables exist through migration `015_railway_scan`
 - [ ] Adena `SignTx` account, signer, direct WUGNOT fields, memo, nonce, expiry, and resource binding pass
 - [ ] Scan bootstraps recent Pearl blocks and searches hash, address, payment ID, and height
 - [ ] Duplicate, altered fingerprint, approval, and reorg drills pass

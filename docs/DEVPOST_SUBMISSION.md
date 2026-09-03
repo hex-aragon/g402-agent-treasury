@@ -10,6 +10,14 @@ This file is submission copy in progress. Do not turn unchecked evidence into a 
 
 A WebMCP payment workspace where agents prepare exact EVM, Solana, or Gno testnet terms and people retain custody and approve the matching wallet transaction.
 
+## Current deployment and evidence
+
+The working deployment is [https://g402-agent-treasury.vercel.app](https://g402-agent-treasury.vercel.app), running Next.js on Vercel with a dedicated Neon PostgreSQL database as the authoritative store. PostgreSQL migrations are applied through `015_railway_scan`.
+
+A bearer-protected scheduled route runs one bounded Gno Scan snapshot daily at 03:00 UTC. It is not a continuously advancing explorer. The code-ready Railway topology would run a singleton persistent indexer against private PostgreSQL, but it is not deployed.
+
+The automated suite passed 118/118 on 2026-09-03. Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl; the passing suite and working URL are not evidence of live settlement.
+
 ## Why this is a strong fit for WebMCP
 
 Payments are a coordination problem between machine speed and human authority. An agent can identify a service and prepare protocol details, but visual wallet automation is brittle and custody delegation is risky. x402 Agent Gateways exposes the workflow as seven narrow WebMCP tools: discover rails, prepare server-bound testnet terms, inspect the native Gno gateway, search Pearl activity, open human review, and verify a durable receipt.
@@ -57,7 +65,7 @@ Do not describe SDK/mock evidence as a live transfer or independent finality pro
 ### Pre-existing foundation
 
 - Gno Pearl facilitator and Adena direct-WUGNOT flow
-- D1 challenge, nonce, payment, audit, and rate-limit persistence
+- original challenge, nonce, payment, audit, and rate-limit persistence, subsequently migrated to authoritative PostgreSQL for the current deployment
 - Pearl Scan with reorg-aware canonical history
 - paid sample API and operations console
 - source- and test-complete but undeployed `g402pay` realm
@@ -106,6 +114,7 @@ Say: “Agents handle discovery and exact preparation. People keep custody and f
 - [x] Seven imperative WebMCP tools are implemented
 - [x] Root `LICENSE` and local setup instructions exist
 - [x] Gno pre-existing work is separated from challenge additions
+- [x] Latest local automated suite passed 118/118 on 2026-09-03
 - [ ] Re-run every automated gate on the exact submitted commit and record results
 - [ ] Complete and record a real Base Sepolia EIP-1193 settlement
 - [ ] Complete and record a real Solana Devnet Wallet Standard settlement after recipient ATA verification

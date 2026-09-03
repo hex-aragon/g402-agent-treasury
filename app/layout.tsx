@@ -8,6 +8,25 @@ export const metadata: Metadata = {
   description: "Human-approved WebMCP payments across EVM, Solana, and Gno",
 };
 
+const PEARL_RPC = "https://rpc.pearl.testnets.gno.land";
+
+function publicGnoRpcUrl() {
+  try {
+    const url = new URL(process.env.NEXT_PUBLIC_GNO_RPC_URL || PEARL_RPC);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      return PEARL_RPC;
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return PEARL_RPC;
+  }
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -18,13 +37,11 @@ export default function RootLayout({
       <head>
         <meta
           name="gnoconnect:rpc"
-          content={
-            process.env.GNO_RPC_URL || "https://rpc.pearl.testnets.gno.land"
-          }
+          content={publicGnoRpcUrl()}
         />
         <meta
           name="gnoconnect:chainid"
-          content={process.env.GNO_CHAIN_ID || "pearl-1"}
+          content={process.env.NEXT_PUBLIC_GNO_CHAIN_ID || "pearl-1"}
         />
         <meta name="gnoconnect:txdomains" content="auto" />
       </head>

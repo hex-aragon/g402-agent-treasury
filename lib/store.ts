@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless";
+import { getPostgres } from "../db/postgres.ts";
 import type { AgentPolicy } from "./policy.ts";
 import { getD1 } from "../db/index.ts";
 import type { PaymentRequirements } from "./domain.ts";
@@ -226,7 +226,7 @@ export async function saveChallenge(challenge: IssuedChallenge) {
     return;
   }
   if (process.env.DATABASE_URL) {
-    const sql = neon(process.env.DATABASE_URL);
+    const sql = getPostgres();
     await sql`insert into payment_challenges(nonce,resource,resource_hash,method,network,chain_id,asset,denom,amount,pay_to,payment_mode,contract_path,extra,expires_at,created_at) values(${challenge.nonce},${challenge.resource},${challenge.resourceHash},${challenge.method},${challenge.network},${challenge.chainId},${challenge.asset},${challenge.denom},${challenge.amount},${challenge.payTo},${challenge.paymentMode},${challenge.contractPath || null},${JSON.stringify(extra)}::jsonb,${challenge.expiresAt},${challenge.createdAt})`;
     return;
   }
@@ -266,7 +266,7 @@ export async function findChallenge(
     };
   }
   if (process.env.DATABASE_URL) {
-    const sql = neon(process.env.DATABASE_URL),
+    const sql = getPostgres(),
       rows =
         await sql`select * from payment_challenges where nonce=${nonce} limit 1`,
       r = rows[0];
@@ -391,7 +391,7 @@ export async function replaceChallengeUnsignedPayloadHash(
     });
     return true;
   }
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   const rows = await sql`update payment_challenges set extra=${extra}::jsonb where nonce=${challengeId} and consumed_by is null and expires_at>=${effectiveNow} and extra->>'unsignedPayloadHash'=${expectedHash} returning nonce`;
   return rows.length === 1;
 }
@@ -407,7 +407,7 @@ export async function findPayment(
     return row ? fromD1Payment(row) : null;
   }
   if (!process.env.DATABASE_URL) return memory.get(paymentId) || null;
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   const rows =
     await sql`select * from payments where payment_id=${paymentId} limit 1`;
   if (!rows[0]) return null;
@@ -478,13 +478,16 @@ export async function savePayment(record: PaymentRecord): Promise<void> {
     memory.set(record.paymentId, record);
     return;
   }
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   await sql`insert into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,block_height,block_hash,confirmations,merchant_id,agent_id,policy_id,service_quote_id,created_at) values(${record.id},${record.paymentId},${record.fingerprint || null},${record.nonce || null},${record.txHash},${record.network},${record.payer},${record.payTo},${record.asset},${record.amount},${record.status},${record.error},${record.resourceHash || null},${record.source || "facilitator"},${record.blockHeight || null},${record.blockHash || null},${record.confirmations || 0},${record.merchantId || null},${record.agentId || null},${record.policyId || null},${record.serviceQuoteId || null},${record.createdAt}) on conflict(payment_id) do update set tx_hash=case when payments.status='settled' and excluded.status<>'reverted' then payments.tx_hash else excluded.tx_hash end,status=case when payments.status='settled' and excluded.status<>'reverted' then payments.status else excluded.status end,error=case when payments.status='settled' and excluded.status<>'reverted' then payments.error else excluded.error end,block_height=coalesce(excluded.block_height,payments.block_height),block_hash=coalesce(excluded.block_hash,payments.block_hash),confirmations=greatest(payments.confirmations,excluded.confirmations),updated_at=now()`;
 }
 
 export async function claimSettlement(
   record: PaymentRecord,
 ): Promise<{ claimed: boolean; existing: PaymentRecord | null }> {
+  const fingerprint = record.fingerprint;
+  const nonce = record.nonce;
+  if (!fingerprint || !nonce) throw new Error("missing_settlement_binding");
   const db = await getD1();
   if (db) {
     const now = Math.floor(Date.now() / 1000),
@@ -497,8 +500,8 @@ export async function claimSettlement(
       .bind(
         record.id,
         record.paymentId,
-        record.fingerprint || "",
-        record.nonce || "",
+        fingerprint,
+        nonce,
         record.txHash,
         record.network,
         record.payer,
@@ -518,7 +521,7 @@ export async function claimSettlement(
         record.serviceQuoteId || null,
         createdAt,
         updatedAt,
-        record.nonce || "",
+        nonce,
         now,
       );
     const link = db
@@ -527,10 +530,10 @@ export async function claimSettlement(
       )
       .bind(
         record.paymentId,
-        record.nonce || "",
+        nonce,
         record.paymentId,
-        record.fingerprint || "",
-        record.nonce || "",
+        fingerprint,
+        nonce,
       );
     const [inserted, linked] = await db.batch([insert, link]);
     if (
@@ -541,9 +544,9 @@ export async function claimSettlement(
     }
     const conflict = await findPayment(record.paymentId);
     if (conflict) {
-      if (conflict.fingerprint !== record.fingerprint)
+      if (conflict.fingerprint !== fingerprint)
         throw new Error("idempotency_conflict");
-      const challenge = await findChallenge(record.nonce || "");
+      const challenge = await findChallenge(nonce);
       if (challenge?.consumedBy !== record.paymentId)
         throw new Error("challenge_link_failed");
       return { claimed: false, existing: conflict };
@@ -553,11 +556,11 @@ export async function claimSettlement(
   if (!process.env.DATABASE_URL) {
     const existing = memory.get(record.paymentId) || null;
     if (existing) {
-      if (existing.fingerprint !== record.fingerprint)
+      if (existing.fingerprint !== fingerprint)
         throw new Error("idempotency_conflict");
       return { claimed: false, existing };
     }
-    const nonceKey = record.nonce || "";
+    const nonceKey = nonce;
     if (usedNonces.has(nonceKey)) throw new Error("nonce_reused");
     usedNonces.add(nonceKey);
     memory.set(record.paymentId, record);
@@ -569,12 +572,12 @@ export async function claimSettlement(
       });
     return { claimed: true, existing: null };
   }
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   const rows =
-    await sql`with claimed as (insert into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,merchant_id,agent_id,policy_id,service_quote_id,created_at) select ${record.id},${record.paymentId},${record.fingerprint},${record.nonce},${record.txHash},${record.network},${record.payer},${record.payTo},${record.asset},${record.amount},${record.status},null,${record.resourceHash || null},${record.source || "facilitator"},${record.merchantId || null},${record.agentId || null},${record.policyId || null},${record.serviceQuoteId || null},${record.createdAt} from payment_challenges where nonce=${record.nonce} and consumed_by is null and expires_at>=extract(epoch from now())::bigint on conflict do nothing returning payment_id) update payment_challenges set consumed_by=${record.paymentId} where nonce=${record.nonce} and exists(select 1 from claimed) returning consumed_by`;
+    await sql`with claimed as (insert into payments(id,payment_id,fingerprint,nonce,tx_hash,network,payer,pay_to,asset,amount,status,error,resource_hash,source,merchant_id,agent_id,policy_id,service_quote_id,created_at) select ${record.id},${record.paymentId},${fingerprint},${nonce},${record.txHash},${record.network},${record.payer},${record.payTo},${record.asset},${record.amount},${record.status},null,${record.resourceHash || null},${record.source || "facilitator"},${record.merchantId || null},${record.agentId || null},${record.policyId || null},${record.serviceQuoteId || null},${record.createdAt} from payment_challenges where nonce=${nonce} and consumed_by is null and expires_at>=extract(epoch from now())::bigint on conflict do nothing returning payment_id) update payment_challenges set consumed_by=${record.paymentId} where nonce=${nonce} and exists(select 1 from claimed) returning consumed_by`;
   if (rows.length) return { claimed: true, existing: null };
   const existing = await findPayment(record.paymentId);
-  if (existing && existing.fingerprint !== record.fingerprint)
+  if (existing && existing.fingerprint !== fingerprint)
     throw new Error("idempotency_conflict");
   if (!existing) throw new Error("nonce_reused");
   return { claimed: false, existing };
@@ -605,7 +608,7 @@ export async function resumeApprovedSettlement(
     memory.set(paymentId, { ...record, status: "settling" });
     return true;
   }
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   const rows =
     await sql`update payments set status='settling',updated_at=now() where payment_id=${paymentId} and fingerprint=${fingerprint} and status='approval_required' returning payment_id`;
   return rows.length === 1;
@@ -649,7 +652,7 @@ export async function getPolicyUsage(
       }
     return { daily: String(daily), monthly: String(monthly) };
   }
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   const rows =
     await sql`select coalesce(sum(amount) filter(where created_at>=date_trunc('day',now())),0)::text daily,coalesce(sum(amount) filter(where created_at>=date_trunc('month',now())),0)::text monthly from payments where agent_id=${agentId} and status='settled'`;
   return {
@@ -681,7 +684,7 @@ export async function appendAudit(
     return;
   }
   if (!process.env.DATABASE_URL) return;
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   await sql`insert into audit_log(id,actor,action,target,metadata) values(${crypto.randomUUID()},${actor},${action},${target},${JSON.stringify(metadata)}::jsonb)`;
 }
 export async function getAgentPolicy(
@@ -693,7 +696,7 @@ export async function getAgentPolicy(
         (p) => p.agentId === agentId && p.enabled,
       ) || null
     );
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   const rows =
     await sql`select * from agent_policies where agent_id=${agentId} and enabled=true order by created_at desc limit 1`;
   if (!rows[0]) return null;
@@ -720,7 +723,7 @@ export async function hasApproval(paymentId: string): Promise<boolean> {
     return [...memoryApprovals.entries()].some(
       ([key, value]) => key.startsWith(`${paymentId}:`) && value === "approved",
     );
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   const rows =
     await sql`select 1 from payment_approvals where payment_id=${paymentId} and decision='approved' limit 1`;
   return rows.length > 0;
@@ -738,7 +741,7 @@ export async function listPayments(limit = 100): Promise<PaymentRecord[]> {
     return [...memory.values()]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   const rows =
     await sql`select * from payments order by created_at desc limit ${Math.min(Math.max(limit, 1), 500)}`;
   return rows.map((r) => ({
@@ -805,7 +808,7 @@ export async function upsertAgentPolicy(policy: AgentPolicy) {
     memoryPolicies.set(policy.id, policy);
     return;
   }
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   await sql`insert into agent_policies(id,agent_id,enabled,network,allowed_merchants,allowed_recipients,allowed_assets,max_per_payment,daily_budget,monthly_budget,approval_threshold,valid_from,valid_until,require_resource_binding) values(${policy.id},${policy.agentId},${policy.enabled},${policy.network},${policy.allowedMerchants},${policy.allowedRecipients},${policy.allowedAssets},${policy.maxPerPayment},${policy.dailyBudget},${policy.monthlyBudget},${policy.approvalThreshold},${policy.validFrom},${policy.validUntil},${policy.requireResourceBinding}) on conflict(id) do update set enabled=excluded.enabled,network=excluded.network,allowed_merchants=excluded.allowed_merchants,allowed_recipients=excluded.allowed_recipients,allowed_assets=excluded.allowed_assets,max_per_payment=excluded.max_per_payment,daily_budget=excluded.daily_budget,monthly_budget=excluded.monthly_budget,approval_threshold=excluded.approval_threshold,valid_from=excluded.valid_from,valid_until=excluded.valid_until,require_resource_binding=excluded.require_resource_binding,updated_at=now()`;
 }
 export async function recordApproval(
@@ -818,7 +821,7 @@ export async function recordApproval(
     memoryApprovals.set(`${paymentId}:${approver}`, decision);
     return;
   }
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   await sql`insert into payment_approvals(id,payment_id,approver,decision,reason) values(${crypto.randomUUID()},${paymentId},${approver},${decision},${reason || null}) on conflict(payment_id,approver) do update set decision=excluded.decision,reason=excluded.reason,created_at=now()`;
 }
 export async function upsertAgent(agent: AgentRecord) {
@@ -826,13 +829,13 @@ export async function upsertAgent(agent: AgentRecord) {
     memoryAgents.set(agent.id, agent);
     return;
   }
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   await sql`insert into agents(id,name,wallet_address,status,created_at) values(${agent.id},${agent.name},${agent.walletAddress},${agent.status},${agent.createdAt}) on conflict(id) do update set name=excluded.name,wallet_address=excluded.wallet_address,status=excluded.status,updated_at=now()`;
 }
 export async function listAgents(limit = 100): Promise<AgentRecord[]> {
   if (!process.env.DATABASE_URL)
     return [...memoryAgents.values()].slice(0, limit);
-  const sql = neon(process.env.DATABASE_URL);
+  const sql = getPostgres();
   const rows =
     await sql`select id,name,wallet_address,status,created_at from agents order by created_at desc limit ${Math.min(Math.max(limit, 1), 500)}`;
   return rows.map((r) => ({

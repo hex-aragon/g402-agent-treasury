@@ -2,7 +2,9 @@
 
 ## Scope and trust boundaries
 
-Protected assets are buyer funds, merchant revenue, challenge integrity, paid resources, settlement idempotency, canonical Gno history, and operator credentials. Trust zones are the WebMCP agent, browser UI, wallet extension, resource server, D1 ledger, external x402 facilitator, chain RPC, and Gno Scan indexer.
+Protected assets are buyer funds, merchant revenue, challenge integrity, paid resources, settlement idempotency, canonical Gno history, and operator credentials. Trust zones are the WebMCP agent, browser UI, wallet extension, Vercel resource server, authoritative Neon PostgreSQL ledger, external x402 facilitator, chain RPC, and Gno Scan indexer.
+
+The production PostgreSQL schema is current through `db/migrations/015_railway_scan.sql`.
 
 Wallet private keys must remain inside EIP-1193, Wallet Standard, or Adena. WebMCP may prepare and navigate, but it cannot sign, settle, change a recipient, or enable a mainnet rail.
 
@@ -32,6 +34,8 @@ Wallet private keys must remain inside EIP-1193, Wallet Standard, or Adena. WebM
 | Gno contract replay/spoofing                                | Realm source pins call path/method/coins/payment fields and uses payment-ID uniqueness; realm remains disabled until deployed                                  | Gno realm source/tests; deployment gate |
 | Reorg or misleading Gno status                              | Fork-preserving blocks, canonical checkpoint, confirmations, common-ancestor rewind, and `reverted` state                                                      | Indexer tests                           |
 | API abuse                                                   | Authorization policy, shared rate buckets, strict schemas, integer/address bounds, cache controls, and bounded search output                                   | HTTP/store tests                        |
+| Public protocol mode grants management access               | Public x402 operations and operator routes use separate checks; management fails closed without a configured bearer key                                        | HTTP authorization tests                |
+| Forwarded-IP spoofing bypasses rate limits                  | Production identity prefers Vercel's platform-controlled `X-Real-IP` boundary, retains a legacy provider-overwritten IP-header fallback, and ignores caller-controlled forwarding chains | HTTP proxy-boundary tests                |
 | Web injection/clickjacking                                  | CSP, frame denial, MIME, and permissions headers                                                                                                               | Runtime headers/config                  |
 
 ## Mainnet gates
@@ -46,7 +50,7 @@ No mainnet gate should be enabled for the hackathon demonstration.
 
 ## Residual risks and release restrictions
 
-- EVM and Solana automated evidence is deterministic SDK construction plus mocked facilitator behavior. A real EIP-1193 Base Sepolia transaction and a real Wallet Standard Solana Devnet transaction have not yet been recorded for this release.
+- Automated verification passed 118/118 tests on 2026-09-03. Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl; deterministic and mocked evidence must not be presented as live settlement.
 - The external facilitator is trusted to verify and broadcast correctly. Response binding prevents an inconsistent success from unlocking content. A later retry independently reconciles a known pending EVM/Solana transaction, but immediate facilitator successes are not automatically chain-indexed; production still needs continuous receipt monitoring.
 - Solana settlement can fail when the recipient lacks the associated token account for the configured USDC mint. Provision and verify the ATA before any live test or mainnet promotion.
 - The fallback EVM and Solana recipients are testnet demo sinks, not merchant-controlled accounts. Testnet transfers to them are irreversible at the protocol level and do not demonstrate merchant receipt.
@@ -56,7 +60,7 @@ No mainnet gate should be enabled for the hackathon demonstration.
 - A transaction-less unknown outcome cannot be safely auto-retried or chain-reconciled. It intentionally remains manual pending until an operator establishes whether a broadcast occurred.
 - Gno has no EIP-3009 equivalent. Its pinned TM2 codec passes deterministic tests, but the exact release build still needs a user-authorized Adena Pearl acceptance check.
 - `g402pay` is not deployed. Do not set realm mode or describe contract receipts as live until funded deployment, package-path verification, and acceptance are complete.
-- Bounded request-driven Gno indexing can lag. A production SLA needs scheduled authenticated sync or the persistent PostgreSQL worker.
-- The private Site must not be presented as judge-accessible until access is explicitly tested from a non-owner session.
+- The current bearer-protected Vercel cron runs one bounded snapshot daily at 03:00 UTC and can lag by design. It is not a continuous explorer; continuous indexing remains a future Railway persistent-worker topology.
+- The public Vercel URL must not be presented as payment-ready merely because it renders. Non-owner access and real-wallet acceptance remain separate release checks.
 
 An attacker cannot unlock the multichain sample with a signature alone. Authorization requires a matching durable settled record. Pending, broadcast, failed, mismatched, chain-derived, expired, or replay-mutated rows are rejected.
