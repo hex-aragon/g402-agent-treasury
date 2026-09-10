@@ -502,7 +502,8 @@ async function assertSolanaRpcForRail(
     const result = await solanaRpcRequest(rpcUrl, "getGenesisHash");
     if (typeof result !== "string")
       throw new Error("solana_rpc_unavailable");
-    if (result !== rail.network.slice("solana:".length))
+    // CAIP-2 truncates the Solana genesis hash to 32 chars; RPC returns it in full.
+    if (result.slice(0, 32) !== rail.network.slice("solana:".length))
       throw new Error("solana_rpc_wrong_cluster");
     pruneExpiryCache(verifiedSolanaRpcs);
     verifiedSolanaRpcs.set(key, Date.now() + SOLANA_RPC_CACHE_TTL_MS);

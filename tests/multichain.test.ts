@@ -568,7 +568,7 @@ test("Solana challenge retries the complete construction on the next Devnet RPC"
     );
     const result =
       request.method === "getGenesisHash"
-        ? SOLANA_DEVNET_NETWORK.split(":", 2)[1]
+        ? "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
         : request.method === "getAccountInfo"
           ? {
               context: { slot: 1 },
@@ -702,7 +702,7 @@ test("Solana challenge rejects a malformed recipient token account", async () =>
     };
     const result =
       request.method === "getGenesisHash"
-        ? SOLANA_DEVNET_NETWORK.split(":", 2)[1]
+        ? "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
         : {
             context: { slot: 1 },
             value: {
@@ -917,7 +917,7 @@ test("Solana mainnet dual gates enable challenge, signature, settlement, and kno
         };
         const result =
           rpc.method === "getGenesisHash"
-            ? SOLANA_MAINNET.split(":", 2)[1]
+            ? "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
             : rpc.method === "getAccountInfo"
               ? {
                   context: { slot: 1 },
@@ -1280,7 +1280,7 @@ test("Solana review refreshes the blockhash and only the refreshed signed messag
     };
     const result =
       request.method === "getGenesisHash"
-        ? SOLANA_DEVNET_NETWORK.split(":", 2)[1]
+        ? "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
         : request.method === "getAccountInfo"
         ? {
             context: { slot: 1 },
@@ -1429,7 +1429,7 @@ test("Solana review never replaces a payload after RPC work consumes the signing
       observedNow = issuedAtMs + 50_000;
     const result =
       request.method === "getGenesisHash"
-        ? SOLANA_DEVNET_NETWORK.split(":", 2)[1]
+        ? "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
         : request.method === "getAccountInfo"
           ? {
               context: { slot: 1 },

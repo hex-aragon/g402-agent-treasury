@@ -215,7 +215,8 @@ async function reconcileSolana(
     ]),
   ]);
   if (!genesisHash) return { state: "pending" };
-  if (genesisHash !== payment.network.split(":", 2)[1])
+  // CAIP-2 truncates the Solana genesis hash to 32 chars; RPC returns it in full.
+  if (genesisHash.slice(0, 32) !== payment.network.split(":", 2)[1])
     throw new Error("reconciliation_genesis_hash_mismatch");
   const status = statuses?.value?.[0];
   if (!status || status.confirmationStatus !== "finalized" || !transaction)

@@ -2,7 +2,7 @@
 
 ## Deployment gates
 
-For current production, PostgreSQL is authoritative. Confirm migrations `001`–`015`, including `015_railway_scan`, are applied to the dedicated Neon database. Pass tests, typecheck, the Next.js production build, Vercel deployment checks, `/api/live`, `/api/health`, unauthenticated cron rejection, an authorized bounded cron run, and Pearl E2E. The latest local baseline is 118/118 tests on 2026-09-03; rerun it on the exact release commit. Keep mainnet false everywhere.
+For current production, PostgreSQL is authoritative. Confirm migrations `001`–`015`, including `015_railway_scan`, are applied to the dedicated Neon database. Pass tests, typecheck, the Next.js production build, Vercel deployment checks, `/api/live`, `/api/health`, unauthenticated cron rejection, an authorized bounded cron run, and Pearl E2E. The latest local baseline is 119/119 tests on 2026-09-10; rerun it on the exact release commit. Keep mainnet false everywhere.
 
 Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl. Treat this as an open acceptance gate, not an incident.
 

@@ -50,7 +50,7 @@ No mainnet gate should be enabled for the hackathon demonstration.
 
 ## Residual risks and release restrictions
 
-- Automated verification passed 118/118 tests on 2026-09-03. Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl; deterministic and mocked evidence must not be presented as live settlement.
+- Automated verification passed 119/119 tests on 2026-09-10. Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl; deterministic and mocked evidence must not be presented as live settlement.
 - The external facilitator is trusted to verify and broadcast correctly. Response binding prevents an inconsistent success from unlocking content. A later retry independently reconciles a known pending EVM/Solana transaction, but immediate facilitator successes are not automatically chain-indexed; production still needs continuous receipt monitoring.
 - Solana settlement can fail when the recipient lacks the associated token account for the configured USDC mint. Provision and verify the ATA before any live test or mainnet promotion.
 - The fallback EVM and Solana recipients are testnet demo sinks, not merchant-controlled accounts. Testnet transfers to them are irreversible at the protocol level and do not demonstrate merchant receipt.

@@ -31,7 +31,7 @@ Production is a standard Next.js application on Vercel with a dedicated Neon Pos
 | `svm-solana-mainnet`   | SVM    | v2                | Wallet Standard   | `locked`                                                              |
 | `gno-pearl`            | Gno    | v1 native adapter | Adena             | `native_ready` when its recipient/self-test prerequisites are present |
 
-The status names describe application configuration and adapter readiness, not chain finality. Automated verification passed 118/118 tests on 2026-09-03, but recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl.
+The status names describe application configuration and adapter readiness, not chain finality. Automated verification passed 119/119 tests on 2026-09-10, but recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl.
 
 ## Wallet-bound v2 lifecycle
 

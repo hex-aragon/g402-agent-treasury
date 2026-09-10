@@ -11,9 +11,9 @@ Status: the Gno facilitator and Scan are deployed on Pearl as a Vercel Next.js a
 
 Shared delivery includes PostgreSQL migrations `001`–`015` as the authoritative schema. Migration `015_railway_scan` adds the checkpoint, canonical block, transaction, and event structures used by scheduled and persistent indexing. Shared delivery also includes persistent rate limiting, audit events, metrics/alerts, CI, dashboards, probes, threat models, and runbooks.
 
-## Current verification on 2026-09-03
+## Current verification on 2026-09-10
 
-- root `npm test`: 118/118 passed
+- root `npm test`: 119/119 passed
 - strict TypeScript: passed
 - recorded real-wallet payments: 0 across Base Sepolia, Solana Devnet, and Gno Pearl
 

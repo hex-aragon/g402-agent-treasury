@@ -264,7 +264,7 @@ test("Solana reconciliation requires finalized status and the exact signed messa
       const request = JSON.parse(String(init?.body)) as { method: string };
       const result =
         request.method === "getGenesisHash"
-          ? SOLANA_DEVNET_NETWORK.split(":", 2)[1]
+          ? "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
           : request.method === "getSignatureStatuses"
             ? {
                 value: [

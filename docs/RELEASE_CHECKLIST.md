@@ -2,12 +2,12 @@
 
 Every item applies to the exact commit and deployment submitted to Devpost. Automated SDK/mock evidence and live-wallet acceptance are recorded separately.
 
-Latest local evidence: 118/118 tests passed on 2026-09-03. This does not replace a rerun on the exact submitted commit. Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl.
+Latest local evidence: 119/119 tests passed on 2026-09-10. This does not replace a rerun on the exact submitted commit. Recorded real-wallet payments remain 0 across Base Sepolia, Solana Devnet, and Gno Pearl.
 
 ## Automated gates
 
 - [ ] `npm ci` succeeds from the committed lockfile in a clean directory
-- [ ] `npm test` passes on the exact submitted commit, including chain, store, WebMCP, and multichain suites (latest local run: 118/118 on 2026-09-03)
+- [ ] `npm test` passes on the exact submitted commit, including chain, store, WebMCP, and multichain suites (latest local run: 119/119 on 2026-09-10)
 - [ ] `npm run typecheck` passes
 - [ ] `npm run build` produces the expected Next.js production build for Vercel
 - [ ] `npm audit --audit-level=high` reports no unresolved high/critical vulnerability

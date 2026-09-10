@@ -25,7 +25,7 @@ Status: the Pearl direct-WUGNOT facilitator and Scan are deployed in a Vercel Ne
 
 ## Current verification
 
-- 118/118 automated tests passed on 2026-09-03.
+- 119/119 automated tests passed on 2026-09-10.
 - Dedicated Neon PostgreSQL is the production state authority, with schema current through `db/migrations/015_railway_scan.sql`.
 
 ## Live staging acceptance
