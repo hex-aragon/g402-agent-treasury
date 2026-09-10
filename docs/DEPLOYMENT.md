@@ -46,7 +46,7 @@ INDEXER_READY_MAX_LAG=20000
 INDEXER_READY_MAX_AGE_MS=90000000
 ```
 
-The worker ensures its effective lease covers a bounded tick even when the configured lease minimum is 60 seconds. `INDEXER_READY_MAX_LAG=20000` and `INDEXER_READY_MAX_AGE_MS=90000000` (25 hours) are allowances for the daily snapshot. They do not promise real-time indexing. Use much tighter readiness limits for a persistent worker.
+The worker ensures its effective lease covers a bounded tick even when the configured lease minimum is 60 seconds. `INDEXER_READY_MAX_LAG=20000` and `INDEXER_READY_MAX_AGE_MS=90000000` (25 hours) are allowances for the daily snapshot. They do not promise real-time indexing. Observed on 2026-09-10: Pearl produced roughly 23,500 blocks per day, so the lag exceeds 20,000 blocks during the last few hours before each 03:00 UTC run and `/api/health` reports `degraded` (HTTP 503) until the next snapshot. Raising `INDEXER_READY_MAX_LAG` to 30000 on the Vercel production environment and redeploying is the recommended operator change; it has not been applied. Use much tighter readiness limits for a persistent worker.
 
 The Pearl variables, access keys, recipient settings, and facilitator settings are listed in `.env.example`. Keep every mainnet gate explicitly false:
 

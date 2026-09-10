@@ -156,6 +156,21 @@ Payments run through a wallet-bound `Payment-Required` preflight at `POST /api/v
 
 Existing: `public/devpost-thumbnail.png` (3:2 thumbnail).
 
+Captured 2026-09-10 from the `2b9a144` release build with headless Chrome at 1920×1280 (3:2), stored under `docs/media/devpost/`:
+
+| File | Page | Note |
+| --- | --- | --- |
+| `01-webmcp-workspace.png` | `/webmcp` | Seven tool cards and the suggested prompt. Headless Chrome has no `document.modelContext`, so the badge reads “WebMCP browser required”; retake in Chrome with WebMCP enabled to show “7 tools registered”. |
+| `02-multichain-pay.png` | `/pay` | Five rail cards (two mainnets locked), Base Sepolia connect step, idle human-review panel. |
+| `03-gno-wallet.png` | `/wallet` | Adena / Gno Pearl review screen before connection. |
+| `04-gno-scan.png` | `/scan` | Daily snapshot explorer with chain height, indexed height, lag, and canonical transactions. |
+| `05-payments.png` | `/payments` | Durable payment list (empty of real-wallet settlements). |
+| `06-developers-api.png` | `/developers` | API and x402 flow documentation page. |
+| `07-operations-console.png` | `/console` | Operations console. |
+| `08-home.png` | `/` | Landing page. |
+
+None of these shows a wallet prompt, a signed payload, or a settled receipt, because no real-wallet payment has been recorded. Shots 4–7 of the list below still need a funded testnet wallet session.
+
 Screenshot shot list to capture at 1920×1280 (all from the live deployment, testnet only):
 
 1. `/webmcp` workspace with the seven registered tools visible.
@@ -210,10 +225,10 @@ N/A — individual submission.
 
 ### Which agent(s) or client(s) did you test your WebMCP tools with?
 
-Verified on 2026-09-04 against the live deployment:
+Verified on 2026-09-04 against the live deployment, and re-verified at the API level on 2026-09-10 against the `2b9a144` release build:
 
-- **Google Chrome with WebMCP enabled** (Claude in Chrome): `/webmcp` reports `data-webmcp="ready"` with all seven tools registered via `document.modelContext.registerTool`.
-- **Live tool-backend exercise**: rail discovery returned 5 rails with both mainnets locked; Base Sepolia preparation returned a 201 server-issued challenge; Gno Pearl preparation returned exact 402 WUGNOT terms; Pearl Scan search and receipt lookup returned bounded results; a mainnet preparation attempt was refused with 403 `mainnet_requires_operator_authorization`.
+- **Google Chrome with WebMCP enabled** (Claude in Chrome): `/webmcp` reports `data-webmcp="ready"` with all seven tools registered via `document.modelContext.registerTool`. Re-confirmed on 2026-09-10 in Chrome 151 against the `2b9a144` release build (`data-webmcp-count="7"`, page badge “7 tools registered”).
+- **Live tool-backend exercise**: rail discovery returned 5 rails with both mainnets locked; Base Sepolia preparation returned a 201 server-issued challenge; Gno Pearl preparation returned exact 402 WUGNOT terms; Pearl Scan search and receipt lookup returned bounded results; a mainnet preparation attempt was refused with 403 `mainnet_requires_operator_authorization`. On 2026-09-10 Solana Devnet preparation also returned a 201 server-issued challenge (60-second window, facilitator fee payer) after the genesis-hash fix.
 - **Automated suite** (119 tests): WebMCP registration lifecycle, schema rejection, cancellation, tamper, and replay coverage.
 
 Current answer to paste:
@@ -222,7 +237,7 @@ Current answer to paste:
 
 Add ChatGPT's in-app browser to this answer only after actually testing there; do not name a client that has not been tested against the release deployment.
 
-**Known issue found and fixed during this testing (2026-09-04, not yet deployed):** live Solana Devnet preparation returned 503 `solana_rpc_wrong_cluster` because the RPC cluster check compared the full genesis hash from `getGenesisHash` against the 32-char truncated CAIP-2 reference (`lib/multichain.ts`, same pattern in `lib/reconciliation.ts`). Fixed by comparing the first 32 chars; test mocks updated to return full-length hashes so the suite now catches this class of bug. Deploy before judging, then re-verify Solana preparation live.
+**Known issue found during this testing (2026-09-04), fixed and deployed 2026-09-10:** live Solana Devnet preparation returned 503 `solana_rpc_wrong_cluster` because the RPC cluster check compared the full genesis hash from `getGenesisHash` against the 32-char truncated CAIP-2 reference (`lib/multichain.ts`, same pattern in `lib/reconciliation.ts`). Fixed by comparing the first 32 chars; the test mocks now return the real full-length Devnet and Mainnet genesis hashes so the suite catches this class of bug. Deployed in commit `2b9a144` on 2026-09-10; live Solana Devnet preparation now returns a 201 server-issued challenge with the 60-second window and facilitator fee payer. The same release upgrades Next.js to 16.3.4 to clear two critical advisories, so `npm audit --audit-level=high` is clean again.
 
 ### Which AI tools have you leveraged while working on this project?
 
@@ -282,7 +297,7 @@ Say: “Agents handle discovery and exact preparation. People keep custody and f
 - [ ] Complete and record a real Solana Devnet Wallet Standard settlement after recipient ATA verification
 - [ ] Reconfirm the Adena Pearl path on the exact release build
 - [x] Verify all seven tools register and their backends respond on the live deployment in Chrome with WebMCP enabled (2026-09-04)
-- [ ] Deploy the Solana genesis-hash cluster-check fix and re-verify Solana Devnet preparation live
+- [x] Deploy the Solana genesis-hash cluster-check fix and re-verify Solana Devnet preparation live (commit `2b9a144` deployed 2026-09-10; live preparation returns 201)
 - [ ] Test all seven tools in ChatGPT's in-app browser
 - [x] Publish the GitHub, GitLab, or Bitbucket repository and place its URL here (public since 2026-09-04, Apache-2.0 detected)
 - [ ] Publish a public YouTube demo under three minutes with audio and place its URL here

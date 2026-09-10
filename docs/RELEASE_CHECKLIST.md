@@ -6,26 +6,26 @@ Latest local evidence: 119/119 tests passed on 2026-09-10. This does not replace
 
 ## Automated gates
 
-- [ ] `npm ci` succeeds from the committed lockfile in a clean directory
-- [ ] `npm test` passes on the exact submitted commit, including chain, store, WebMCP, and multichain suites (latest local run: 119/119 on 2026-09-10)
-- [ ] `npm run typecheck` passes
-- [ ] `npm run build` produces the expected Next.js production build for Vercel
-- [ ] `npm audit --audit-level=high` reports no unresolved high/critical vulnerability
+- [x] `npm ci` succeeds from the committed lockfile in a clean directory (GitHub CI run 34424481894, verified 2026-09-10 on commit `2b9a144`)
+- [x] `npm test` passes on the exact submitted commit, including chain, store, WebMCP, and multichain suites (119/119 locally and in GitHub CI on commit `2b9a144`, 2026-09-10)
+- [x] `npm run typecheck` passes (verified 2026-09-10 on commit `2b9a144`)
+- [x] `npm run build` produces the expected Next.js production build for Vercel (local and Vercel build dpl_32y8UY3zgFrpFSnwEM5TdX7wLTQh, verified 2026-09-10 on commit `2b9a144`)
+- [x] `npm audit --audit-level=high` reports no unresolved high/critical vulnerability (0 vulnerabilities after the Next.js 16.3.4 upgrade, verified 2026-09-10 on commit `2b9a144`)
 - [ ] PostgreSQL migrations `001`–`015` apply to a clean database and are recorded in `schema_migrations`
 - [ ] Schema inspection confirms challenge and settlement-claim indexes plus the `015_railway_scan` checkpoint, canonical block, transaction, and event structures
-- [ ] Production uses Vercel Next.js and one dedicated Neon PostgreSQL database as the authoritative store
-- [ ] Bearer-protected `GET /api/cron/index` is scheduled for 03:00 UTC daily and rejects missing or invalid authorization
-- [ ] Scan is described as a bounded daily snapshot; Railway persistent indexing is not described as deployed
+- [x] Production uses Vercel Next.js and one dedicated Neon PostgreSQL database as the authoritative store (verified 2026-09-10 on commit `2b9a144`)
+- [x] Bearer-protected `GET /api/cron/index` is scheduled for 03:00 UTC daily and rejects missing or invalid authorization (401 for missing and wrong bearer, verified 2026-09-10 on commit `2b9a144`)
+- [x] Scan is described as a bounded daily snapshot; Railway persistent indexing is not described as deployed (verified 2026-09-10 on commit `2b9a144`)
 - [ ] Generated/browser assets contain no API key, bearer token, wallet secret, or embedded facilitator credential
 
 ## Chain-neutral control plane
 
-- [ ] `/api/v2/rails` lists exactly five rails and exposes only the facilitator origin
-- [ ] Base Sepolia and Solana Devnet are marked `sdk_ready`, not “live settled”
-- [ ] Ethereum and Solana mainnets are marked `locked` with both gates false
-- [ ] WebMCP discovers all seven tools
+- [x] `/api/v2/rails` lists exactly five rails and exposes only the facilitator origin (live response: 5 rails, `facilitator.origin` only, verified 2026-09-10)
+- [x] Base Sepolia and Solana Devnet are marked `sdk_ready`, not “live settled” (verified 2026-09-10 on commit `2b9a144`)
+- [x] Ethereum and Solana mainnets are marked `locked` with both gates false (live `/api/v2/rails` and 403 on mainnet challenge, verified 2026-09-10 on commit `2b9a144`)
+- [x] WebMCP discovers all seven tools (`data-webmcp="ready"`, `data-webmcp-count="7"` in Google Chrome 151 with WebMCP enabled on the `2b9a144` build, 2026-09-10)
 - [ ] `prepare_agent_payment` accepts Base Sepolia, Solana Devnet, and Gno Pearl only
-- [ ] Mainnet rail IDs are rejected by WebMCP preparation
+- [x] Mainnet rail IDs are rejected by WebMCP preparation (schema tests plus live 403 `mainnet_requires_operator_authorization` for both mainnet rails, verified 2026-09-10)
 - [ ] Agent-prepared terms survive wallet connection without being replaced
 - [ ] Challenge ID, payment ID, and EVM authorization nonce are server-issued; clients only echo them
 - [ ] `/api/v2/review` rejects changed payer, resource, requirements, and prior Solana unsigned message
@@ -70,11 +70,11 @@ Latest local evidence: 119/119 tests passed on 2026-09-10. This does not replace
 
 ## Mainnet isolation
 
-- [ ] `X402_ALLOW_EVM_MAINNET=false`
-- [ ] `X402_ENABLE_EVM_MAINNET_SETTLEMENT=false`
-- [ ] `X402_ALLOW_SOLANA_MAINNET=false`
-- [ ] `X402_ENABLE_SOLANA_MAINNET_SETTLEMENT=false`
-- [ ] `G402_ALLOW_MAINNET=false`
+- [x] `X402_ALLOW_EVM_MAINNET=false` (production, verified 2026-09-10 on commit `2b9a144`)
+- [x] `X402_ENABLE_EVM_MAINNET_SETTLEMENT=false` (production, verified 2026-09-10 on commit `2b9a144`)
+- [x] `X402_ALLOW_SOLANA_MAINNET=false` (production, verified 2026-09-10 on commit `2b9a144`)
+- [x] `X402_ENABLE_SOLANA_MAINNET_SETTLEMENT=false` (production, verified 2026-09-10 on commit `2b9a144`)
+- [x] `G402_ALLOW_MAINNET=false` (production `/api/health` reports the Gno mainnet lock, verified 2026-09-10 on commit `2b9a144`)
 - [ ] No WebMCP tool or client input can mutate these settings
 - [ ] Mainnet enablement documentation requires verified recipients, Solana ATA/RPC, production facilitator support, monitoring, and two-person review
 
@@ -89,12 +89,12 @@ Latest local evidence: 119/119 tests passed on 2026-09-10. This does not replace
 
 ## Devpost submission
 
-- [ ] Public GitHub, GitLab, or Bitbucket repository URL added
-- [ ] Root license is visible on the public repository page
+- [x] Public GitHub, GitLab, or Bitbucket repository URL added (https://github.com/hex-aragon/g402-agent-treasury)
+- [x] Root license is visible on the public repository page (Apache-2.0 detected by GitHub)
 - [ ] Public YouTube demo is under three minutes and includes audio
 - [ ] Demo claims only the live transactions actually shown
 - [ ] Submission text distinguishes pre-existing Gno work from challenge additions
-- [ ] Working live URL is added
+- [x] Working live URL is added (https://g402-agent-treasury.vercel.app/webmcp)
 - [ ] Judge access is tested from a non-owner session
 - [ ] Required credentials, if any, are placed only in the Devpost submission field
 - [ ] All unchecked placeholders are resolved before submission
