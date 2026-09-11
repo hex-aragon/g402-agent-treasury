@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { constantTimeApiKeyMatch } from "./domain";
+import { publicError } from "./public-errors";
 import { consumeRateLimit } from "./rate-limit";
 
 function configuredApiKeys(value = process.env.FACILITATOR_API_KEYS || "") {
@@ -76,5 +77,7 @@ export function authorizeAdmin(req: NextRequest) {
 }
 
 export function safeError(message: string, status = 400) {
-  return NextResponse.json({ error: message }, { status });
+  return NextResponse.json({ error: publicError(message, status) }, {
+    status, headers: { "cache-control": "no-store" },
+  });
 }

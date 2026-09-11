@@ -27,11 +27,11 @@ export async function GET(request: NextRequest) {
       { ok: true, result },
       { headers: { "cache-control": "no-store" } },
     );
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       {
         ok: false,
-        error: error instanceof Error ? error.message : "index_failed",
+        error: "index_failed",
       },
       { status: 503, headers: { "cache-control": "no-store" } },
     );

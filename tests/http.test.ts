@@ -1,7 +1,7 @@
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
-import { authorize, authorizeAdmin, clientIp } from "../lib/http.ts";
+import { authorize, authorizeAdmin, clientIp, safeError } from "../lib/http.ts";
 
 const originalEnvironment = {
   ADMIN_API_KEYS: process.env.ADMIN_API_KEYS,
@@ -65,4 +65,20 @@ test("production rate-limit identity ignores forwarded-for spoofing", () => {
     "unknown",
   );
   Reflect.set(process.env, "NODE_ENV", "test");
+});
+
+
+test("HTTP errors suppress private exception details and disable caching", async () => {
+  for (const message of [
+    "postgres://operator:private-password@internal.example/database",
+    "Bearer private-runtime-token",
+    "private_runtime_token_without_punctuation",
+    '{"input":"private customer data"}',
+  ]) {
+    const response = safeError(message, 503);
+    assert.deepEqual(await response.json(), { error: "internal_error" });
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+  assert.deepEqual(await safeError("idempotency_conflict", 409).json(), { error: "idempotency_conflict" });
+  assert.deepEqual(await safeError("unknown sensitive details").json(), { error: "invalid_request" });
 });

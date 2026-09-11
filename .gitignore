@@ -31,3 +31,26 @@ coverage
 *.log
 *.tsbuildinfo
 *.tar.gz
+
+# Private runtime configuration, credentials and local data
+.env*
+!.env.example
+.dev.vars*
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.db
+*.db-*
+*.sqlite*
+*.log
+id_rsa*
+id_ed25519*
+.npmrc
+.pypirc
+.netrc
+credentials.json
+service-account.json
+.vercel/
+.wrangler/
